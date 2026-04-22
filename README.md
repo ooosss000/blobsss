@@ -2,7 +2,8 @@
 
 BLOBSSS is a high-performance computer vision suite designed for real-time motion tracking and creative visualization. The system is engineered for 1:1 native-resolution fidelity, supporting professional creative coding and video analysis workflows with a focus on minimalist brutalist aesthetics.
 
-![BLOBSSS User Interface](public/preview.png)
+![Invert Mode](public/preview_invert.png)
+![Net Mode](public/preview_net.png)
 
 ## Technical Architecture
 
@@ -13,25 +14,40 @@ The tracking pipeline utilizes frame differencing and connected component labeli
 - **Object Tracking**: Nearest-centroid assignment across frames for consistent identity persistence.
 - **Subdivision System**: Support for NxN sub-box subdivision for high-density tracking within detected regions.
 
-### Performance Optimization
+## Parameter Reference
+
+### Motion Detection
+- **SENSITIVITY**: Controls the pixel-level difference threshold required to trigger motion. Lower values are more sensitive to subtle movement.
+- **BLOB LIFETIME**: The number of frames an object persists after motion has stopped. Useful for smoothing tracking jitter.
+- **MIN / MAX AREA**: Filters detected regions by pixel area. Prevents noise from being tracked while allowing focus on specific object sizes.
+- **MAX DIMENSION**: Limits the maximum width or height of a tracked region. Useful for ignoring large background shifts.
+
+### Density
+- **MAX BLOBS**: The maximum number of simultaneous objects to track and render.
+- **SUBDIVIDE (NxN)**: Artificially increases tracking density by subdividing detected motion regions into a grid. 1x1 is standard tracking; 4x4 creates high-density point clouds.
+
+### Visual Configuration
+- **STROKE / TEXT COLOR**: Hex-based color selection for vector outlines and data labels.
+- **STROKE W**: Width of the geometric outlines and connecting links.
+- **FONT PX**: Size of the data labels in pixels.
+- **LINKS**: Number of nearest-neighbor connections to draw between object centroids.
+- **FONT**: Selection of typography (Monospace, Outfit, Serif, Sans).
+
+### Label Options
+- **COORDINATES XY**: Toggles the display of current centroid coordinates.
+- **BLOB ID**: Toggles the persistent identification number of each object.
+- **BLOB SIZE W×H**: Toggles the display of the bounding box dimensions.
+- **LABEL BG PILL**: Toggles a background pill shape behind text for increased legibility.
+
+## Performance Optimization
 - **Hardware-Accelerated Rendering**: Utilizes GPU-accelerated canvas rendering for low-latency previews.
 - **Viewport-Aware Resolution**: Dynamic preview scaling ensures consistent frame rates at high source resolutions (4K+) while maintaining analytical accuracy.
 - **Direct-to-MP4 Export**: Implements the WebCodecs API (VideoEncoder) and H.264 High Profile Level 5.2 for lossless-quality export without intermediate transcoding.
 - **Backpressure Management**: Throttled capture loops and encoder queue monitoring prevent frame drops and system instability during high-bitrate recording.
 
-### Render Specifications
-The suite provides multiple visualization modes, each optimized for different analytical or aesthetic outcomes:
-- **INVERT**: Geometric bounding boxes with difference-composite typography for high visibility.
-- **ASCII**: High-detail density mapping utilizing a custom character ramp.
-- **OUTLINE**: Minimalist stroke-based tracking with auxiliary fill opacity.
-- **NET**: Centroid connectivity network utilizing quadratic bezier curves.
-- **GHOST**: Temporal motion tails with decaying opacity and spatial history.
-- **ELLIPSE**: Covariance-style visualization using concentric rings and centroid crosshairs.
-- **PATH**: Monochrome background with persistent trajectory markers.
-
 ## System Controls
-- **Toggle UI**: `CTRL + K`
-- **Playback Control**: `SPACE` or canvas click
+- **Toggle UI**: CTRL + K
+- **Playback Control**: SPACE or canvas click
 - **Snapshot**: PNG or SVG vector export at current frame resolution
 - **Export**: Hardware-accelerated MP4 recording
 
@@ -42,7 +58,6 @@ The suite provides multiple visualization modes, each optimized for different an
 - **Styling**: Vanilla CSS with Design Token architecture
 
 ## Deployment and Execution
-To initialize the development environment:
 ```bash
 npm install
 npm run dev
