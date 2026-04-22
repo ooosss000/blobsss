@@ -1,73 +1,51 @@
-# React + TypeScript + Vite
+# BLOBSSS
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+BLOBSSS is a high-performance computer vision suite designed for real-time motion tracking and creative visualization. The system is engineered for 1:1 native-resolution fidelity, supporting professional creative coding and video analysis workflows with a focus on minimalist brutalist aesthetics.
 
-Currently, two official plugins are available:
+![BLOBSSS User Interface](public/preview.png)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Technical Architecture
 
-## React Compiler
+### Real-Time Tracking Engine
+The tracking pipeline utilizes frame differencing and connected component labeling to identify motion regions in real-time.
+- **Motion Masking**: Luminance-weighted per-pixel differentiation performed on a localized proxy canvas.
+- **Labeling Algorithm**: Union-Find connected component labeling for efficient cluster detection.
+- **Object Tracking**: Nearest-centroid assignment across frames for consistent identity persistence.
+- **Subdivision System**: Support for NxN sub-box subdivision for high-density tracking within detected regions.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Performance Optimization
+- **Hardware-Accelerated Rendering**: Utilizes GPU-accelerated canvas rendering for low-latency previews.
+- **Viewport-Aware Resolution**: Dynamic preview scaling ensures consistent frame rates at high source resolutions (4K+) while maintaining analytical accuracy.
+- **Direct-to-MP4 Export**: Implements the WebCodecs API (VideoEncoder) and H.264 High Profile Level 5.2 for lossless-quality export without intermediate transcoding.
+- **Backpressure Management**: Throttled capture loops and encoder queue monitoring prevent frame drops and system instability during high-bitrate recording.
 
-## Expanding the ESLint configuration
+### Render Specifications
+The suite provides multiple visualization modes, each optimized for different analytical or aesthetic outcomes:
+- **INVERT**: Geometric bounding boxes with difference-composite typography for high visibility.
+- **ASCII**: High-detail density mapping utilizing a custom character ramp.
+- **OUTLINE**: Minimalist stroke-based tracking with auxiliary fill opacity.
+- **NET**: Centroid connectivity network utilizing quadratic bezier curves.
+- **GHOST**: Temporal motion tails with decaying opacity and spatial history.
+- **ELLIPSE**: Covariance-style visualization using concentric rings and centroid crosshairs.
+- **PATH**: Monochrome background with persistent trajectory markers.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## System Controls
+- **Toggle UI**: `CTRL + K`
+- **Playback Control**: `SPACE` or canvas click
+- **Snapshot**: PNG or SVG vector export at current frame resolution
+- **Export**: Hardware-accelerated MP4 recording
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Implementation Details
+- **Frontend**: Vite, React, TypeScript
+- **Video Processing**: WebCodecs API, mp4-muxer
+- **Motion Logic**: Custom Canvas2D/ImageData processing
+- **Styling**: Vanilla CSS with Design Token architecture
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Deployment and Execution
+To initialize the development environment:
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+The system requires a browser environment with WebCodecs support for full functionality.

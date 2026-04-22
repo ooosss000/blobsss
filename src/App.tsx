@@ -117,11 +117,21 @@ export default function App() {
     videoRef.current.paused ? videoRef.current.play() : videoRef.current.pause();
   };
 
-  // ─── PNG Snapshot ────────────────────────────────────────────────────────────
+  // ─── Snapshots ────────────────────────────────────────────────────────────
   const snapshot = () => {
     const c = canvasRef.current; if (!c) return;
     const a = document.createElement('a');
     a.href = c.toDataURL('image/png'); a.download = `blobsss_${Date.now()}.png`; a.click();
+  };
+
+  const exportSVG = () => {
+    const tracker = trackerRef.current; if (!tracker) return;
+    const svg = tracker.toSVG();
+    const blob = new Blob([svg], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `blobsss_${Date.now()}.svg`; a.click();
+    URL.revokeObjectURL(url);
   };
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -371,10 +381,15 @@ export default function App() {
                       <option value="854x480">854×480</option>
                     </select>
                   </div>
-                  <div className="row gap-8">
-                    <button className="btn-brut flex-1" onClick={snapshot} disabled={isRecording || isEncoding}>
-                      <Camera size={13} /> PNG
+                  <div className="row gap-4">
+                    <button className="btn-brut flex-1" onClick={snapshot} disabled={isRecording || isEncoding} title="Export current frame as PNG">
+                      PNG
                     </button>
+                    <button className="btn-brut flex-1" onClick={exportSVG} disabled={isRecording || isEncoding} title="Export current frame as SVG">
+                      SVG
+                    </button>
+                  </div>
+                  <div className="row mt-8">
                     <button
                       className={`btn-brut flex-1${isRecording ? ' recording' : ''}`}
                       onClick={toggleRecord}

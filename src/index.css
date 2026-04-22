@@ -139,6 +139,8 @@ body {
 /* ─── UTILITIES ─────────────────────────────────────────────────────────── */
 .row { display: flex; align-items: center; }
 .gap-8 { gap: 8px; }
+.gap-4 { gap: 4px; }
+.mt-8 { margin-top: 8px; }
 .flex-1 { flex: 1; }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 

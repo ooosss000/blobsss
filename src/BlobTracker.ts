@@ -149,6 +149,100 @@ export class BlobTracker {
     }
   }
 
+  public toSVG(): string {
+    const p = this.params;
+    const blobs = this.getDisplayBlobs();
+    const s = this.getS();
+    
+    let svg = `<svg viewBox="0 0 ${this.width} ${this.height}" xmlns="http://www.w3.org/2000/svg">`;
+    
+    // Add background rect if in certain modes
+    if (p.renderMode === 'BOX_INVERT') {
+      svg += `<rect width="100%" height="100%" fill="black" />`;
+    }
+
+    // Helper for labels
+    const getLabelSVG = (b: TrackedBlob, lx: number, ly: number) => {
+      const lines: string[] = [];
+      if (p.showId)          lines.push(`ID ${b.id}`);
+      if (p.showCoordinates) lines.push(`${Math.floor(b.cx)}  ${Math.floor(b.cy)}`);
+      if (p.showSize)        lines.push(`${Math.floor(b.w)}×${Math.floor(b.h)}`);
+      if (!lines.length) return '';
+
+      const fh = (p.fontSize + 3) * s;
+      const padding = 5 * s;
+      const totalH = (lines.length * fh) + (4 * s);
+      let finalY = ly - (2 * s);
+      if (finalY - totalH < 0) finalY = ly + totalH + (2 * s);
+
+      let labelSvg = '';
+      lines.forEach((line, i) => {
+        const ty = Math.round(finalY - (4 * s) - (i * fh));
+        labelSvg += `<text x="${lx + padding}" y="${ty}" fill="${p.textColor}" font-family="${p.fontFamily}" font-size="${p.fontSize * s}" font-weight="bold">${line}</text>`;
+      });
+      return labelSvg;
+    };
+
+    // Render modes to SVG
+    if (p.neighborLinks > 0) {
+      for (let i = 0; i < this.blobs.length; i++) {
+        const bi = this.blobs[i];
+        this.blobs
+          .map((bj, j) => ({ d: Math.hypot(bi.cx-bj.cx, bi.cy-bj.cy), j }))
+          .filter(d => d.j !== i).sort((a,b) => a.d-b.d)
+          .slice(0, p.neighborLinks)
+          .forEach(({ j }) => {
+            const bj = this.blobs[j];
+            svg += `<line x1="${bi.cx}" y1="${bi.cy}" x2="${bj.cx}" y2="${bj.cy}" stroke="${p.strokeColor}" stroke-width="${p.strokeWidth * 0.55 * s}" />`;
+          });
+      }
+    }
+
+    switch (p.renderMode) {
+      case 'BOX_INVERT':
+        for (const b of blobs) {
+          svg += `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="white" />`;
+          svg += `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="${p.strokeColor}" stroke-width="${p.strokeWidth * s}" />`;
+          if (b.id < 1000 || b.id % 1000 === 0) svg += getLabelSVG(b, b.x, b.y);
+        }
+        break;
+      case 'OUTLINE':
+        for (const b of blobs) {
+          svg += `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="${this.rgba(p.strokeColor, 0.08)}" stroke="${p.strokeColor}" stroke-width="${p.strokeWidth * s}" />`;
+          if (b.id < 1000 || b.id % 1000 === 0) svg += getLabelSVG(b, b.x, b.y);
+        }
+        break;
+      case 'CENTROID_NET':
+        for (const b of blobs) {
+          const r = Math.max(2, Math.round(b.w / 8));
+          svg += `<circle cx="${b.cx}" cy="${b.cy}" r="${r}" fill="${p.strokeColor}" />`;
+          svg += `<circle cx="${b.cx}" cy="${b.cy}" r="${r*2.8}" fill="none" stroke="${p.strokeColor}" stroke-width="${p.strokeWidth * s}" />`;
+          if (b.id < 1000 || b.id % 1000 === 0) svg += getLabelSVG(b, b.cx + (10 * s), b.cy - (p.fontSize * s));
+        }
+        break;
+      case 'ELLIPSE':
+        for (const b of blobs) {
+          svg += `<ellipse cx="${b.cx}" cy="${b.cy}" rx="${b.w*0.6}" ry="${b.h*0.6}" fill="${this.rgba(p.strokeColor, 0.1)}" />`;
+          for (let i = 0; i < 3; i++) {
+            const rs = 0.5 + i * 0.25;
+            svg += `<ellipse cx="${b.cx}" cy="${b.cy}" rx="${b.w*rs}" ry="${b.h*rs}" fill="none" stroke="${p.strokeColor}" stroke-width="${p.strokeWidth * s}" />`;
+          }
+          svg += getLabelSVG(b, b.cx + (b.w/2) * 1.4 + 6, b.cy - p.fontSize);
+        }
+        break;
+      case 'TRAIL_PATH':
+        for (const b of blobs) {
+          svg += `<circle cx="${b.spawnX}" cy="${b.spawnY}" r="${Math.max(4, p.strokeWidth * 2.5)}" fill="#00ff66" />`;
+          svg += `<circle cx="${b.cx}" cy="${b.cy}" r="${Math.max(5, p.strokeWidth * 3)}" fill="#ff2d00" />`;
+          svg += getLabelSVG(b, b.cx + 10, b.cy - p.fontSize);
+        }
+        break;
+    }
+
+    svg += '</svg>';
+    return svg;
+  }
+
   public start() {
     this.isPlaying = true;
     // Use requestVideoFrameCallback for frame-accurate processing (no wasted cycles)
@@ -650,9 +744,6 @@ export class BlobTracker {
     }
     this.ctx.globalAlpha = 1;
   }
-
-
-  // ─── HELPERS ──────────────────────────────────────────────────────────────
 
   // ─── HELPERS ──────────────────────────────────────────────────────────────
 
