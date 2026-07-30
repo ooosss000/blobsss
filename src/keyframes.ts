@@ -90,3 +90,32 @@ export function resolveActiveParams(
 
   return result;
 }
+
+/**
+ * Computes the on-screen display size for the export-mode preview box.
+ * Bigger export resolutions shrink relatively more but never below a
+ * legible floor; small exports stay close to natural size. Capped by a
+ * fraction of the viewport so it never dominates the screen. Both axes
+ * are capped independently, and the 240px floor applies to the longer edge.
+ */
+export function clampExportPreviewSize(
+  exportW: number,
+  exportH: number,
+  viewportW: number,
+  viewportH: number,
+): { w: number; h: number } {
+  const maxW = Math.min(560, viewportW * 0.4);
+  const maxH = Math.min(560, viewportH * 0.4);
+  const rawW = exportW * 0.3;
+  const rawH = exportH * 0.3;
+  const scale = Math.min(maxW / rawW, maxH / rawH, 1);
+  let w = rawW * scale;
+  let h = rawH * scale;
+  const longEdge = Math.max(w, h);
+  if (longEdge < 240) {
+    const boost = 240 / longEdge;
+    w *= boost;
+    h *= boost;
+  }
+  return { w: Math.round(w), h: Math.round(h) };
+}

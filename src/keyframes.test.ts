@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveActiveParams, type Keyframe } from './keyframes';
+import { resolveActiveParams, clampExportPreviewSize, type Keyframe } from './keyframes';
 import type { TrackerParams } from './BlobTracker';
 
 const baseParams: TrackerParams = {
@@ -84,5 +84,46 @@ describe('resolveActiveParams', () => {
     const a = kf('a', 0, { diffThreshold: 10 });
     const mid = resolveActiveParams([b, a], 5, baseParams);
     expect(mid.diffThreshold).toBe(20);
+  });
+});
+
+describe('clampExportPreviewSize', () => {
+  it('never goes below the 240px legible floor (landscape)', () => {
+    const { w, h } = clampExportPreviewSize(400, 300, 1440, 900);
+    expect(Math.max(w, h)).toBe(240);
+    expect(h).toBe(Math.round(w * (300 / 400)));
+  });
+
+  it('never goes below the 240px legible floor (portrait)', () => {
+    const { w, h } = clampExportPreviewSize(300, 400, 1440, 900);
+    expect(Math.max(w, h)).toBe(240);
+    expect(w).toBe(Math.round(h * (300 / 400)));
+  });
+
+  it('caps a large landscape export by the width-relative viewport cap', () => {
+    const { w, h } = clampExportPreviewSize(3840, 2160, 1440, 900);
+    // maxW = min(560, 1440*0.4=576) = 560; scale = 560/1152; h follows aspect
+    expect(w).toBe(560);
+    expect(h).toBe(Math.round(w * (2160 / 3840)));
+  });
+
+  it('caps a large portrait export by the height-relative viewport cap without overflowing the viewport', () => {
+    const { w, h } = clampExportPreviewSize(2160, 3840, 1366, 768);
+    const maxH = Math.min(560, 768 * 0.4); // 307.2
+    expect(h).toBeLessThanOrEqual(Math.round(maxH) + 1); // rounding tolerance
+    expect(w).toBe(Math.round(h * (2160 / 3840)));
+  });
+
+  it('scales proportionally (no cap, no floor) for a mid-size export', () => {
+    const { w, h } = clampExportPreviewSize(1200, 675, 1600, 900);
+    // rawW = 360, rawH = 202.5; maxW = min(560,640)=560, maxH = min(560,360)=360 -> scale = min(560/360, 360/202.5, 1) = 1
+    expect(w).toBe(360);
+    expect(h).toBe(203);
+  });
+
+  it('is capped by the viewport-relative term, not the fixed 560 ceiling, on a small viewport', () => {
+    const { w } = clampExportPreviewSize(1920, 1080, 1000, 800);
+    // maxW = min(560, 400) = 400
+    expect(w).toBeLessThanOrEqual(400);
   });
 });
