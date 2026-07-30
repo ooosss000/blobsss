@@ -85,7 +85,6 @@ export class BlobTracker {
   width = 0; height = 0;
   private proxyH = 0;
   private scaleX = 1; private scaleY = 1;
-  private dpr = 1;
   private lastFrameTime = 0;
 
   constructor(video: HTMLVideoElement, canvas: HTMLCanvasElement, params: TrackerParams) {
@@ -127,7 +126,6 @@ export class BlobTracker {
 
     // DPR=1 for export (exact pixels); capped at 2 for preview
     const dpr = isExport ? 1 : Math.min(window.devicePixelRatio || 1, 2);
-    this.dpr = dpr;
     this.canvas.width = this.width * dpr;
     this.canvas.height = this.height * dpr;
     this.canvas.style.width = `${this.width}px`;
@@ -379,7 +377,6 @@ export class BlobTracker {
 
     for (const det of detected) {
       const fcx = det.cx * this.scaleX, fcy = det.cy * this.scaleY;
-      const fx  = det.x1 * this.scaleX, fy  = det.y1 * this.scaleY;
       const fw  = (det.x2 - det.x1) * this.scaleX, fh = (det.y2 - det.y1) * this.scaleY;
 
       let bestIdx = -1, bestDist = Infinity;

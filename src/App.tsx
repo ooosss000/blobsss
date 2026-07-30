@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Video, Camera, Upload, Play, Pause, Loader2 } from 'lucide-react';
+import { Video, Upload, Play, Pause, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BlobTracker } from './BlobTracker';
 import type { TrackerParams, RenderMode } from './BlobTracker';
