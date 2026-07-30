@@ -119,3 +119,44 @@ export function clampExportPreviewSize(
   }
   return { w: Math.round(w), h: Math.round(h) };
 }
+
+/**
+ * Clamps a proposed drag time for a keyframe: keeps it within [0, duration]
+ * and, where the timeline has room, at least `minGap` away from every
+ * other keyframe (so interpolation never divides by near-zero). Computes
+ * valid intervals directly rather than iteratively pushing away from
+ * neighbors, so the result is independent of array order and never
+ * re-collides with a keyframe already passed. If there isn't enough room
+ * to honor the gap everywhere (more keyframes than the duration can hold
+ * at this spacing), returns the closest best-effort position.
+ */
+export function clampKeyframeTime(
+  keyframes: Keyframe[],
+  id: string,
+  proposedTime: number,
+  duration: number,
+  minGap: number = MIN_KEYFRAME_GAP,
+): number {
+  if (!Number.isFinite(duration) || duration <= 0 || Number.isNaN(proposedTime)) return 0;
+  const proposed = Math.max(0, Math.min(duration, proposedTime));
+
+  const times = keyframes.filter(k => k.id !== id).map(k => k.time).sort((a, b) => a - b);
+
+  const slots: Array<[number, number]> = [];
+  let lo = 0;
+  for (const t of times) {
+    slots.push([lo, t - minGap]);
+    lo = Math.max(lo, t + minGap);
+  }
+  slots.push([lo, duration]);
+
+  let best: number | null = null;
+  for (const [a, b] of slots) {
+    const start = Math.max(0, a);
+    const end = Math.min(duration, b);
+    if (start > end) continue;
+    const candidate = Math.max(start, Math.min(end, proposed));
+    if (best === null || Math.abs(candidate - proposed) < Math.abs(best - proposed)) best = candidate;
+  }
+  return best ?? proposed;
+}

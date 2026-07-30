@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveActiveParams, clampExportPreviewSize, type Keyframe } from './keyframes';
+import { resolveActiveParams, clampExportPreviewSize, clampKeyframeTime, type Keyframe } from './keyframes';
 import type { TrackerParams } from './BlobTracker';
 
 const baseParams: TrackerParams = {
@@ -125,5 +125,72 @@ describe('clampExportPreviewSize', () => {
     const { w } = clampExportPreviewSize(1920, 1080, 1000, 800);
     // maxW = min(560, 400) = 400
     expect(w).toBeLessThanOrEqual(400);
+  });
+});
+
+describe('clampKeyframeTime', () => {
+  const kfs: Keyframe[] = [
+    kf('a', 2, {}),
+    kf('b', 5, {}),
+    kf('c', 8, {}),
+  ];
+
+  it('clamps to [0, duration]', () => {
+    expect(clampKeyframeTime(kfs, 'b', -3, 10)).toBe(0);
+    expect(clampKeyframeTime(kfs, 'b', 999, 10)).toBe(10);
+  });
+
+  it('allows free movement when not near another keyframe', () => {
+    expect(clampKeyframeTime(kfs, 'b', 6, 10)).toBe(6);
+  });
+
+  it('pushes away from a neighbor within the minimum gap', () => {
+    const result = clampKeyframeTime(kfs, 'b', 2.02, 10);
+    expect(result).toBeCloseTo(2.05, 5);
+  });
+
+  it('pushes left when the proposed time is below the neighbor', () => {
+    expect(clampKeyframeTime(kfs, 'b', 1.99, 10)).toBeCloseTo(1.95, 5);
+  });
+
+  it('ignores the keyframe being dragged itself when checking neighbors', () => {
+    expect(clampKeyframeTime(kfs, 'b', 5, 10)).toBe(5);
+  });
+
+  it('stays clear of every neighbor when dragged between two close ones', () => {
+    const close: Keyframe[] = [kf('x', 2, {}), kf('y', 2.08, {}), kf('d', 5, {})];
+    const r = clampKeyframeTime(close, 'd', 2.03, 10);
+    expect(Math.abs(r - 2)).toBeGreaterThanOrEqual(0.05 - 1e-9);
+    expect(Math.abs(r - 2.08)).toBeGreaterThanOrEqual(0.05 - 1e-9);
+  });
+
+  it('is independent of array order', () => {
+    const asc: Keyframe[] = [kf('y', 1.0, {}), kf('x', 1.05, {}), kf('d', 5, {})];
+    const desc: Keyframe[] = [kf('x', 1.05, {}), kf('y', 1.0, {}), kf('d', 5, {})];
+    expect(clampKeyframeTime(asc, 'd', 1.02, 10)).toBeCloseTo(clampKeyframeTime(desc, 'd', 1.02, 10), 9);
+  });
+
+  it('keeps the gap at the duration boundary', () => {
+    const near: Keyframe[] = [kf('x', 9.99, {}), kf('d', 5, {})];
+    expect(clampKeyframeTime(near, 'd', 10, 10)).toBeLessThanOrEqual(9.94 + 1e-9);
+  });
+
+  it('keeps the gap at the zero boundary', () => {
+    const near: Keyframe[] = [kf('x', 0.01, {}), kf('d', 5, {})];
+    expect(clampKeyframeTime(near, 'd', 0, 10)).toBeGreaterThanOrEqual(0.06 - 1e-9);
+  });
+
+  it('honours a custom minGap', () => {
+    expect(clampKeyframeTime(kfs, 'b', 2.1, 10, 0.5)).toBeCloseTo(2.5, 5);
+  });
+
+  it('returns 0 for a non-finite or non-positive duration instead of NaN', () => {
+    expect(clampKeyframeTime(kfs, 'b', 5, NaN)).toBe(0);
+    expect(clampKeyframeTime(kfs, 'b', 5, 0)).toBe(0);
+  });
+
+  it('returns 0 for a non-finite proposedTime', () => {
+    expect(clampKeyframeTime(kfs, 'b', NaN, 10)).toBe(0);
+    expect(clampKeyframeTime(kfs, 'b', Infinity, 10)).toBe(10);
   });
 });
