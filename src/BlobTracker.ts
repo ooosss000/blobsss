@@ -79,10 +79,12 @@ export class BlobTracker {
   private prevData: Uint8ClampedArray | null = null;
   private currFramePixels: Uint8ClampedArray | null = null;
   private blobs: TrackedBlob[] = [];
+  private baseParams: TrackerParams;
   private params: TrackerParams;
 
   private isPlaying = false;
   width = 0; height = 0;
+  private liveParamsResolver: ((time: number) => TrackerParams) | null = null;
   private proxyH = 0;
   private scaleX = 1; private scaleY = 1;
   private lastFrameTime = 0;
@@ -91,6 +93,7 @@ export class BlobTracker {
     this.video = video;
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
+    this.baseParams = params;
     this.params = params;
 
     this.proxyCanvas = document.createElement('canvas');
@@ -99,7 +102,21 @@ export class BlobTracker {
     this.resize();
   }
 
-  public updateParams(p: Partial<TrackerParams>) { this.params = { ...this.params, ...p }; }
+  public updateParams(p: Partial<TrackerParams>) {
+    this.baseParams = { ...this.baseParams, ...p };
+    if (!this.liveParamsResolver) this.params = this.baseParams;
+  }
+
+  /**
+   * When set, called with the video's current time on every rendered
+   * frame; the returned params replace `this.params` for that frame. Used
+   * by the keyframe system so preview and export stay in sync. Pass null
+   * to go back to static params driven only by updateParams().
+   */
+  public setLiveParamsResolver(fn: ((time: number) => TrackerParams) | null) {
+    this.liveParamsResolver = fn;
+    if (!fn) this.params = this.baseParams;
+  }
 
   public resize(w?: number, h?: number, bypassCap = false) {
     const isExport = bypassCap && w !== undefined && h !== undefined;
@@ -275,6 +292,10 @@ export class BlobTracker {
 
   private processFrame() {
     if (!this.width || !this.height) return;
+
+    if (this.liveParamsResolver) {
+      this.params = this.liveParamsResolver(this.video.currentTime);
+    }
 
     // Render video to output + proxy canvases
     this.ctx.imageSmoothingEnabled = true;
