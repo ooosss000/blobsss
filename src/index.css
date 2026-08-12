@@ -49,8 +49,6 @@ body {
 }
 
 .main-canvas.recording {
-  width: 320px !important;
-  height: auto !important;
   position: fixed !important;
   bottom: 20px !important;
   right: 20px !important;
@@ -374,3 +372,44 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   width: 100%;
 }
 .link-btn:hover { color: #fff; }
+
+/* ─── TRANSPORT OVERLAY ─────────────────────────────────────────────────── */
+.transport-overlay {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  z-index: 40;
+}
+
+/* ─── KEYFRAME TIMELINE ─────────────────────────────────────────────────── */
+.kf-timeline { display: flex; flex-direction: column; gap: 6px; }
+.kf-track {
+  position: relative;
+  height: 28px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  cursor: default;
+}
+.kf-playhead {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 2px;
+  background: var(--text-mid);
+  pointer-events: none;
+}
+.kf-marker {
+  position: absolute;
+  top: 50%; left: 0;
+  width: 10px; height: 10px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: var(--text-hi);
+  border: 1px solid var(--bg);
+  cursor: grab;
+  touch-action: none;
+}
+.kf-marker.selected { background: var(--accent); }
+.kf-marker:active { cursor: grabbing; }
+.kf-delete-btn { color: var(--accent); border-color: var(--accent); }
