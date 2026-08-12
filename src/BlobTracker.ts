@@ -269,6 +269,16 @@ export class BlobTracker {
   }
   public stop() { this.isPlaying = false; }
 
+  /** Repaints the current frame with current params, without motion detection or blob aging. Used to refresh the preview after a param edit while paused. */
+  public renderOnce() {
+    if (!this.width || !this.height) return;
+    if (this.liveParamsResolver) {
+      this.params = this.liveParamsResolver(this.video.currentTime);
+    }
+    this.drawVideoFrame();
+    this.renderBlobs();
+  }
+
   private rvfcLoop = () => {
     if (!this.isPlaying) return;
     this.processFrame();
@@ -290,6 +300,19 @@ export class BlobTracker {
   // Scaling helper for resolution-independent detail (baseline 1280px)
   private getS() { return this.width / 1280; }
 
+  private drawVideoFrame() {
+    this.ctx.imageSmoothingEnabled = true;
+    this.ctx.imageSmoothingQuality = 'high';
+
+    const isMonoMode = (this.params.renderMode === 'TRAIL_PATH' || this.params.renderMode === 'ASCII_BOX');
+    this.ctx.filter = isMonoMode ? 'grayscale(100%) brightness(1.0) contrast(1.5)' : 'none';
+    this.ctx.drawImage(this.video, 0, 0, this.width, this.height);
+    this.ctx.filter = 'none';
+
+    // Set smoothing to false for sharp brutalist graphics/text
+    this.ctx.imageSmoothingEnabled = false;
+  }
+
   private processFrame() {
     if (!this.width || !this.height) return;
 
@@ -297,18 +320,8 @@ export class BlobTracker {
       this.params = this.liveParamsResolver(this.video.currentTime);
     }
 
-    // Render video to output + proxy canvases
-    this.ctx.imageSmoothingEnabled = true;
-    this.ctx.imageSmoothingQuality = 'high';
-    
-    const isMonoMode = (this.params.renderMode === 'TRAIL_PATH' || this.params.renderMode === 'ASCII_BOX');
-    this.ctx.filter = isMonoMode ? 'grayscale(100%) brightness(1.0) contrast(1.5)' : 'none';
-    this.ctx.drawImage(this.video, 0, 0, this.width, this.height);
-    this.ctx.filter = 'none';
-    
-    // Set smoothing to false for sharp brutalist graphics/text
-    this.ctx.imageSmoothingEnabled = false;
-    
+    this.drawVideoFrame();
+
     this.proxyCtx.drawImage(this.video, 0, 0, PROXY_W, this.proxyH);
 
     const frame = this.proxyCtx.getImageData(0, 0, PROXY_W, this.proxyH);

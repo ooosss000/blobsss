@@ -1,8 +1,11 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { Video, Upload, Play, Pause, Loader2 } from 'lucide-react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import { Video, Upload, Play, Pause, Loader2, RotateCcw, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BlobTracker } from './BlobTracker';
 import type { TrackerParams, RenderMode } from './BlobTracker';
+import { resolveActiveParams, clampExportPreviewSize, clampKeyframeTime } from './keyframes';
+import type { Keyframe } from './keyframes';
+import { KeyframeTimeline } from './KeyframeTimeline';
 import './index.css';
 
 const MODES: { id: RenderMode; label: string }[] = [
@@ -52,10 +55,20 @@ export default function App() {
   const [exportRes, setExportRes] = useState<{ w: number; h: number }>({ w: 1920, h: 1080 });
   const [isEncoding, setIsEncoding] = useState(false);
 
+  // Keyframe state
+  const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
+  const [selectedKeyframeId, setSelectedKeyframeId] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const trackerRef = useRef<BlobTracker | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const keyframesRef = useRef<Keyframe[]>(keyframes);
+  const paramsRef = useRef<TrackerParams>(params);
+  useEffect(() => { keyframesRef.current = keyframes; }, [keyframes]);
+  useEffect(() => { paramsRef.current = params; }, [params]);
 
   // ─── Keyboard shortcut ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -75,18 +88,26 @@ export default function App() {
       if (vid.videoWidth && vid.videoHeight) {
         setExportRes({ w: vid.videoWidth, h: vid.videoHeight });
       }
+      setDuration(vid.duration || 0);
       trackerRef.current?.stop();
-      trackerRef.current = new BlobTracker(vid, cv, params);
+      trackerRef.current = new BlobTracker(vid, cv, paramsRef.current);
+      if (keyframesRef.current.length > 0) {
+        trackerRef.current.setLiveParamsResolver((t) => resolveActiveParams(keyframesRef.current, t, paramsRef.current));
+      }
+      trackerRef.current.renderOnce();
     };
     const onPlay  = () => { trackerRef.current?.start(); setIsPaused(false); };
     const onPause = () => { trackerRef.current?.stop();  setIsPaused(true);  };
+    const onTime  = () => setCurrentTime(vid.currentTime);
     vid.addEventListener('loadedmetadata', onMeta);
     vid.addEventListener('play',  onPlay);
     vid.addEventListener('pause', onPause);
+    vid.addEventListener('timeupdate', onTime);
     return () => {
       vid.removeEventListener('loadedmetadata', onMeta);
       vid.removeEventListener('play',  onPlay);
       vid.removeEventListener('pause', onPause);
+      vid.removeEventListener('timeupdate', onTime);
     };
   }, [videoSrc]);
 
@@ -99,15 +120,66 @@ export default function App() {
     return () => window.removeEventListener('resize', onResize);
   }, [isRecording]);
 
+  // Return to preview resolution after recording stops — deferred to an effect so
+  // React first commits the canvas `style` prop change (to `undefined`) before the
+  // imperative resize() re-establishes explicit style.width/height; doing it
+  // synchronously inside stopRecording races the style commit and corrupts the
+  // HiDPI preview until the next window resize.
+  useLayoutEffect(() => { if (!isRecording) trackerRef.current?.resize(); }, [isRecording]);
+
   useEffect(() => { trackerRef.current?.updateParams(params); }, [params]);
+
+  // Keep selection valid only when it dangles (points at a deleted keyframe);
+  // never override an intentional deselect (selectedKeyframeId === null)
+  useEffect(() => {
+    if (selectedKeyframeId && !keyframes.some(k => k.id === selectedKeyframeId)) {
+      const sorted = [...keyframes].sort((a, b) => a.time - b.time);
+      setSelectedKeyframeId(sorted.length ? sorted[sorted.length - 1].id : null);
+    }
+  }, [keyframes, selectedKeyframeId]);
+
+  // Drive live preview + export from keyframes (or fall back to static params)
+  useEffect(() => {
+    const tracker = trackerRef.current;
+    if (!tracker) return;
+    if (keyframes.length === 0) {
+      tracker.setLiveParamsResolver(null);
+    } else {
+      tracker.setLiveParamsResolver((t) => resolveActiveParams(keyframes, t, params));
+    }
+  }, [keyframes, params, videoSrc]);
 
   const setParam = (k: keyof TrackerParams, v: any) =>
     setParams(p => ({ ...p, [k]: typeof v === 'string' && !isNaN(+v) ? +v : v }));
+
+  const displayParams: TrackerParams = selectedKeyframeId
+    ? (keyframes.find(k => k.id === selectedKeyframeId)?.params ?? params)
+    : params;
+
+  const setDisplayParam = (k: keyof TrackerParams, v: any) => {
+    const coerced = typeof v === 'string' && !isNaN(+v) ? +v : v;
+    if (selectedKeyframeId) {
+      setKeyframes(kfs => kfs.map(kf =>
+        kf.id === selectedKeyframeId ? { ...kf, params: { ...kf.params, [k]: coerced } } : kf
+      ));
+    } else {
+      setParam(k, v);
+    }
+  };
+
+  // Repaint the paused preview so keyframe/param edits give immediate visual feedback
+  useEffect(() => {
+    if (isPaused) trackerRef.current?.renderOnce();
+  }, [isPaused, displayParams, keyframes, currentTime]);
 
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (!f) return;
     setVideoSrc(URL.createObjectURL(f));
     setIsPaused(true);
+    setKeyframes([]);
+    setSelectedKeyframeId(null);
+    setCurrentTime(0);
+    setDuration(0);
     trackerRef.current?.stop();
     trackerRef.current = null;
   };
@@ -115,6 +187,31 @@ export default function App() {
   const togglePlay = () => {
     if (!videoRef.current) return;
     videoRef.current.paused ? videoRef.current.play() : videoRef.current.pause();
+  };
+
+  const restart = () => {
+    if (videoRef.current) videoRef.current.currentTime = 0;
+  };
+
+  const addKeyframe = () => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    const id = `kf_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const time = clampKeyframeTime(keyframes, id, vid.currentTime, duration);
+    const activeParams = keyframes.length > 0
+      ? resolveActiveParams(keyframes, vid.currentTime, params)
+      : params;
+    const newKf: Keyframe = { id, time, params: activeParams };
+    setKeyframes(kfs => [...kfs, newKf]);
+    setSelectedKeyframeId(newKf.id);
+  };
+
+  const deleteKeyframe = (id: string) => {
+    setKeyframes(kfs => kfs.filter(k => k.id !== id));
+  };
+
+  const retimeKeyframe = (id: string, time: number) => {
+    setKeyframes(kfs => kfs.map(k => (k.id === id ? { ...k, time: clampKeyframeTime(kfs, id, time, duration) } : k)));
   };
 
   // ─── Snapshots ────────────────────────────────────────────────────────────
@@ -250,8 +347,6 @@ export default function App() {
       console.error('MP4 finalization error:', err);
     }
 
-    // Return to preview resolution
-    trackerRef.current?.resize();
     encoderRef.current = null;
     muxerRef.current = null;
     frameCountRef.current = 0;
@@ -265,6 +360,8 @@ export default function App() {
 
   const fmtTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
+  const previewSize = isRecording ? clampExportPreviewSize(exportRes.w, exportRes.h, window.innerWidth, window.innerHeight) : null;
+
   // ─── RENDER ──────────────────────────────────────────────────────────────────
 
   return (
@@ -273,8 +370,19 @@ export default function App() {
       <canvas
         ref={canvasRef}
         className={`main-canvas ${isRecording ? 'recording' : ''}`}
+        style={previewSize ? { width: previewSize.w, height: previewSize.h } : undefined}
         onClick={togglePlay}
       />
+      {videoSrc && !isRecording && !isEncoding && (
+        <div className="transport-overlay">
+          <button className="btn-brut icon-btn" onClick={togglePlay}>
+            {isPaused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
+          </button>
+          <button className="btn-brut icon-btn" onClick={restart} title="Restart">
+            <RotateCcw size={14} />
+          </button>
+        </div>
+      )}
 
       <AnimatePresence>
         {showUI && (
@@ -302,6 +410,11 @@ export default function App() {
                     {isPaused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
                   </button>
                 )}
+                {videoSrc && (
+                  <button className="btn-brut icon-btn" onClick={restart} title="Restart">
+                    <RotateCcw size={14} />
+                  </button>
+                )}
               </div>
             </Section>
 
@@ -310,44 +423,44 @@ export default function App() {
                 <Section label="RENDER MODE">
                   <div className="mode-grid">
                     {MODES.map(m => (
-                      <button key={m.id} className={`mode-btn${params.renderMode === m.id ? ' active' : ''}`}
-                        onClick={() => setParam('renderMode', m.id)}>{m.label}</button>
+                      <button key={m.id} className={`mode-btn${displayParams.renderMode === m.id ? ' active' : ''}`}
+                        onClick={() => setDisplayParam('renderMode', m.id)}>{m.label}</button>
                     ))}
                   </div>
-                  {params.renderMode === 'ASCII_BOX' && (
-                    <BrutSlider label="ASCII CONTRAST" value={params.asciiContrast} min={0.3} max={4} step={0.1} onChange={v => setParam('asciiContrast', v)} />
+                  {displayParams.renderMode === 'ASCII_BOX' && (
+                    <BrutSlider label="ASCII CONTRAST" value={displayParams.asciiContrast} min={0.3} max={4} step={0.1} onChange={v => setDisplayParam('asciiContrast', v)} />
                   )}
                 </Section>
 
                 <Section label="MOTION DETECTION">
-                  <BrutSlider label="SENSITIVITY" value={params.diffThreshold} min={1} max={80} step={1} onChange={v => setParam('diffThreshold', v)} hint="Lower = more sensitive" invert />
-                  <BrutSlider label="BLOB LIFETIME" value={params.lifeFrames} min={1} max={60} step={1} onChange={v => setParam('lifeFrames', v)} />
+                  <BrutSlider label="SENSITIVITY" value={displayParams.diffThreshold} min={1} max={80} step={1} onChange={v => setDisplayParam('diffThreshold', v)} hint="Lower = more sensitive" invert />
+                  <BrutSlider label="BLOB LIFETIME" value={displayParams.lifeFrames} min={1} max={60} step={1} onChange={v => setDisplayParam('lifeFrames', v)} />
                   <Row2>
-                    <BrutSlider label="MIN AREA" value={params.minArea} min={1} max={200} step={1} onChange={v => setParam('minArea', v)} />
-                    <BrutSlider label="MAX AREA" value={params.maxArea} min={100} max={20000} step={100} onChange={v => setParam('maxArea', v)} />
+                    <BrutSlider label="MIN AREA" value={displayParams.minArea} min={1} max={200} step={1} onChange={v => setDisplayParam('minArea', v)} />
+                    <BrutSlider label="MAX AREA" value={displayParams.maxArea} min={100} max={20000} step={100} onChange={v => setDisplayParam('maxArea', v)} />
                   </Row2>
-                  <BrutSlider label="MAX DIMENSION" value={params.maxBlobDim} min={1} max={320} step={1} onChange={v => setParam('maxBlobDim', v)} hint="Max width/height of a blob to track (1=micro, 320=full)" />
+                  <BrutSlider label="MAX DIMENSION" value={displayParams.maxBlobDim} min={1} max={320} step={1} onChange={v => setDisplayParam('maxBlobDim', v)} hint="Max width/height of a blob to track (1=micro, 320=full)" />
                 </Section>
 
                 <Section label="DENSITY">
-                  <BrutSlider label="MAX BLOBS" value={params.maxBlobs} min={1} max={400} step={1} onChange={v => setParam('maxBlobs', v)} />
-                  <BrutSlider label="SUBDIVIDE (NxN)" value={params.subdivide} min={1} max={4} step={1} onChange={v => setParam('subdivide', v)} />
+                  <BrutSlider label="MAX BLOBS" value={displayParams.maxBlobs} min={1} max={400} step={1} onChange={v => setDisplayParam('maxBlobs', v)} />
+                  <BrutSlider label="SUBDIVIDE (NxN)" value={displayParams.subdivide} min={1} max={4} step={1} onChange={v => setDisplayParam('subdivide', v)} />
                   <div className="hint-text">1=normal · 4=4× denser</div>
                 </Section>
 
                 <Section label="VISUAL">
                   <Row2>
-                    {params.renderMode !== 'TRAIL_PATH' && <ColorRow label="STROKE" value={params.strokeColor} onChange={v => setParam('strokeColor', v)} />}
-                    <ColorRow label="TEXT" value={params.textColor} onChange={v => setParam('textColor', v)} />
+                    {displayParams.renderMode !== 'TRAIL_PATH' && <ColorRow label="STROKE" value={displayParams.strokeColor} onChange={v => setDisplayParam('strokeColor', v)} />}
+                    <ColorRow label="TEXT" value={displayParams.textColor} onChange={v => setDisplayParam('textColor', v)} />
                   </Row2>
                   <Row2>
-                    {params.renderMode !== 'TRAIL_PATH' && <BrutSlider label="STROKE W" value={params.strokeWidth} min={0.5} max={8} step={0.5} onChange={v => setParam('strokeWidth', v)} />}
-                    <BrutSlider label="FONT PX" value={params.fontSize} min={6} max={48} step={1} onChange={v => setParam('fontSize', v)} />
+                    {displayParams.renderMode !== 'TRAIL_PATH' && <BrutSlider label="STROKE W" value={displayParams.strokeWidth} min={0.5} max={8} step={0.5} onChange={v => setDisplayParam('strokeWidth', v)} />}
+                    <BrutSlider label="FONT PX" value={displayParams.fontSize} min={6} max={48} step={1} onChange={v => setDisplayParam('fontSize', v)} />
                   </Row2>
-                  {params.renderMode !== 'TRAIL_PATH' && <BrutSlider label="LINKS" value={params.neighborLinks} min={0} max={12} step={1} onChange={v => setParam('neighborLinks', v)} />}
+                  {displayParams.renderMode !== 'TRAIL_PATH' && <BrutSlider label="LINKS" value={displayParams.neighborLinks} min={0} max={12} step={1} onChange={v => setDisplayParam('neighborLinks', v)} />}
                   <div className="row gap-8">
                     <div className="section-label" style={{ marginBottom: 0 }}>FONT</div>
-                    <select value={params.fontFamily} onChange={e => setParam('fontFamily', e.target.value)} className="brut-select flex-1">
+                    <select value={displayParams.fontFamily} onChange={e => setDisplayParam('fontFamily', e.target.value)} className="brut-select flex-1">
                       <option value="monospace">MONO</option>
                       <option value="Outfit">OUTFIT</option>
                       <option value="serif">SERIF</option>
@@ -357,10 +470,31 @@ export default function App() {
                 </Section>
 
                 <Section label="LABELS">
-                  <div className="toggle-row"><span>COORDINATES XY</span><BrutToggle value={params.showCoordinates} onChange={v => setParam('showCoordinates', v)} /></div>
-                  <div className="toggle-row"><span>BLOB ID</span><BrutToggle value={params.showId} onChange={v => setParam('showId', v)} /></div>
-                  <div className="toggle-row"><span>BLOB SIZE W×H</span><BrutToggle value={params.showSize} onChange={v => setParam('showSize', v)} /></div>
-                  <div className="toggle-row"><span>LABEL BG PILL</span><BrutToggle value={params.showLabelBG} onChange={v => setParam('showLabelBG', v)} /></div>
+                  <div className="toggle-row"><span>COORDINATES XY</span><BrutToggle value={displayParams.showCoordinates} onChange={v => setDisplayParam('showCoordinates', v)} /></div>
+                  <div className="toggle-row"><span>BLOB ID</span><BrutToggle value={displayParams.showId} onChange={v => setDisplayParam('showId', v)} /></div>
+                  <div className="toggle-row"><span>BLOB SIZE W×H</span><BrutToggle value={displayParams.showSize} onChange={v => setDisplayParam('showSize', v)} /></div>
+                  <div className="toggle-row"><span>LABEL BG PILL</span><BrutToggle value={displayParams.showLabelBG} onChange={v => setDisplayParam('showLabelBG', v)} /></div>
+                </Section>
+
+                <Section label="KEYFRAMES">
+                  <KeyframeTimeline
+                    keyframes={keyframes}
+                    selectedId={selectedKeyframeId}
+                    currentTime={currentTime}
+                    duration={duration}
+                    onSelect={setSelectedKeyframeId}
+                    onDelete={deleteKeyframe}
+                    onRetime={retimeKeyframe}
+                  />
+                  <button className="btn-brut flex-1 mt-8" onClick={addKeyframe}>
+                    <Plus size={13} />
+                    <span>ADD KEYFRAME AT {fmtTime(Math.floor(currentTime))}</span>
+                  </button>
+                  <div className="hint-text">
+                    {keyframes.length === 0
+                      ? 'No keyframes — export uses the static settings above.'
+                      : `${keyframes.length} keyframe${keyframes.length > 1 ? 's' : ''} — play/pause to position, drag markers to retime.`}
+                  </div>
                 </Section>
 
                 {/* ── EXPORT ── */}
