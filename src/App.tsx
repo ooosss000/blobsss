@@ -94,20 +94,28 @@ export default function App() {
       if (keyframesRef.current.length > 0) {
         trackerRef.current.setLiveParamsResolver((t) => resolveActiveParams(keyframesRef.current, t, paramsRef.current));
       }
-      trackerRef.current.renderOnce();
     };
     const onPlay  = () => { trackerRef.current?.start(); setIsPaused(false); };
     const onPause = () => { trackerRef.current?.stop();  setIsPaused(true);  };
     const onTime  = () => setCurrentTime(vid.currentTime);
+    const onSeeked = () => {
+      setCurrentTime(vid.currentTime);
+      if (vid.paused) trackerRef.current?.renderOnce();
+    };
+    const onLoadedData = () => { trackerRef.current?.renderOnce(); };
     vid.addEventListener('loadedmetadata', onMeta);
     vid.addEventListener('play',  onPlay);
     vid.addEventListener('pause', onPause);
     vid.addEventListener('timeupdate', onTime);
+    vid.addEventListener('seeked', onSeeked);
+    vid.addEventListener('loadeddata', onLoadedData);
     return () => {
       vid.removeEventListener('loadedmetadata', onMeta);
       vid.removeEventListener('play',  onPlay);
       vid.removeEventListener('pause', onPause);
       vid.removeEventListener('timeupdate', onTime);
+      vid.removeEventListener('seeked', onSeeked);
+      vid.removeEventListener('loadeddata', onLoadedData);
     };
   }, [videoSrc]);
 

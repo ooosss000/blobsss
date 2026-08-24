@@ -67,7 +67,8 @@ export function KeyframeTimeline({
             onClick={e => {
               e.stopPropagation();
               if (draggedRef.current) { draggedRef.current = false; return; }
-              onSelect(k.id === selectedId ? null : k.id);
+              if (k.id === selectedId) return; // keep a keyframe selected while any exist — deselecting would silently disable panel edits (resolver overrides global params every frame)
+              onSelect(k.id);
             }}
             title={`${k.time.toFixed(2)}s`}
           />
