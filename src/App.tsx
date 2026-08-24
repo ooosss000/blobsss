@@ -134,6 +134,9 @@ export default function App() {
   useEffect(() => {
     if (selectedKeyframeId && !keyframes.some(k => k.id === selectedKeyframeId)) {
       const sorted = [...keyframes].sort((a, b) => a.time - b.time);
+      // Recovers a dangling selection after external deletion; self-terminating,
+      // cannot run on every render since the guard above stops matching once fixed.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedKeyframeId(sorted.length ? sorted[sorted.length - 1].id : null);
     }
   }, [keyframes, selectedKeyframeId]);
