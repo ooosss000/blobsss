@@ -18,6 +18,7 @@ const MODES: { id: RenderMode; label: string }[] = [
   { id: 'TRAIL_PATH',   label: 'PATH'    },
   { id: 'RECON_SCAN',   label: 'RECON'   },
   { id: 'FEATURE_CALLOUT', label: 'CALLOUT' },
+  { id: 'MESH_TRIANGULATE', label: 'MESH' },
 ];
 
 const DEFAULT_PARAMS: TrackerParams = {

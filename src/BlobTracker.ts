@@ -502,6 +502,7 @@ export class BlobTracker {
       case 'TRAIL_PATH':    this.renderTrailPath(displayBlobs);    break;
       case 'RECON_SCAN':    this.renderReconScan(displayBlobs);    break;
       case 'FEATURE_CALLOUT': this.renderFeatureCallout(displayBlobs); break;
+      case 'MESH_TRIANGULATE': this.renderMeshTriangulate(displayBlobs); break;
     }
 
     this.ctx.globalAlpha = 1;
@@ -910,6 +911,46 @@ export class BlobTracker {
     this.ctx.globalAlpha = 1;
   }
 
+  // ─── MODE: MESH_TRIANGULATE (dense k-nearest feature mesh) ────────────────
+
+  private renderMeshTriangulate(blobs: TrackedBlob[]) {
+    this.ctx.globalCompositeOperation = 'source-over';
+    const p = this.params;
+    const s = this.getS();
+    const k = p.neighborLinks + 2;
+
+    this.ctx.strokeStyle = p.strokeColor;
+    this.ctx.lineWidth   = p.strokeWidth * 0.7 * s;
+    for (let i = 0; i < blobs.length; i++) {
+      const bi = blobs[i];
+      this.ctx.globalAlpha = Math.min(1, bi.life / p.lifeFrames) * 0.6;
+      this.ctx.beginPath();
+      blobs
+        .map((bj, j) => ({ d: Math.hypot(bi.cx-bj.cx, bi.cy-bj.cy), j }))
+        .filter(d => d.j !== i).sort((a, b) => a.d-b.d)
+        .slice(0, k)
+        .forEach(({ j }) => {
+          this.ctx.moveTo(bi.cx, bi.cy);
+          this.ctx.lineTo(blobs[j].cx, blobs[j].cy);
+        });
+      this.ctx.stroke();
+    }
+    this.ctx.globalAlpha = 1;
+
+    this.prepFont();
+    const patchSize = 8 * s;
+    for (const b of blobs) {
+      if (b.w <= 0 || b.h <= 0) continue;
+      const a = Math.min(1, b.life / p.lifeFrames);
+      this.ctx.globalAlpha = a;
+      this.ctx.strokeStyle = p.strokeColor;
+      this.ctx.lineWidth   = p.strokeWidth * s;
+      this.ctx.strokeRect(b.cx - patchSize / 2, b.cy - patchSize / 2, patchSize, patchSize);
+      if (b.id < 1000 || b.id % 1000 === 0) this.drawLabel(b, b.cx + patchSize, b.cy);
+    }
+    this.ctx.globalAlpha = 1;
+  }
+
   // ─── HELPERS ──────────────────────────────────────────────────────────────
 
   private drawLinks() {
@@ -948,6 +989,7 @@ export class BlobTracker {
     if (p.showId)          lines.push(`ID ${b.id}`);
     if (p.showCoordinates) {
       if (p.renderMode === 'RECON_SCAN') lines.push(`x: ${Math.floor(b.cx)}  y: ${Math.floor(b.cy)}`);
+      else if (p.renderMode === 'MESH_TRIANGULATE') lines.push(`X: ${b.cx.toFixed(2)}  Y: ${b.cy.toFixed(2)}`);
       else lines.push(`${Math.floor(b.cx)}  ${Math.floor(b.cy)}`);
     }
     if (p.showSize)        lines.push(`${Math.floor(b.w)}×${Math.floor(b.h)}`);
