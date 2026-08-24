@@ -17,6 +17,7 @@ const MODES: { id: RenderMode; label: string }[] = [
   { id: 'ELLIPSE',      label: 'ELLPS'   },
   { id: 'TRAIL_PATH',   label: 'PATH'    },
   { id: 'RECON_SCAN',   label: 'RECON'   },
+  { id: 'FEATURE_CALLOUT', label: 'CALLOUT' },
 ];
 
 const DEFAULT_PARAMS: TrackerParams = {

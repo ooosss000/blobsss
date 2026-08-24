@@ -501,6 +501,7 @@ export class BlobTracker {
       case 'ELLIPSE':       this.renderEllipse(displayBlobs);      break;
       case 'TRAIL_PATH':    this.renderTrailPath(displayBlobs);    break;
       case 'RECON_SCAN':    this.renderReconScan(displayBlobs);    break;
+      case 'FEATURE_CALLOUT': this.renderFeatureCallout(displayBlobs); break;
     }
 
     this.ctx.globalAlpha = 1;
@@ -844,6 +845,69 @@ export class BlobTracker {
 
     this.ctx.globalAlpha = 1;
     this.ctx.setLineDash([]);
+  }
+
+  // ─── MODE: FEATURE_CALLOUT (photogrammetry-style measurement callouts) ────
+
+  private renderFeatureCallout(blobs: TrackedBlob[]) {
+    this.ctx.globalCompositeOperation = 'source-over';
+    const p = this.params;
+    const s = this.getS();
+    this.prepFont();
+
+    // Only the 3 largest (by actual rendered area, respecting maxBlobDim
+    // clamping) get a full measurement callout
+    const top = [...blobs].sort((a, b) => (b.w * b.h) - (a.w * a.h)).slice(0, 3);
+    const topIds = new Set(top.map(b => b.id));
+
+    // Faint reticle on every other blob so untagged blobs are still visible
+    this.ctx.strokeStyle = this.rgba(p.strokeColor, 0.35);
+    this.ctx.lineWidth   = p.strokeWidth * 0.6 * s;
+    for (const b of blobs) {
+      if (b.w > 0 && b.h > 0 && !topIds.has(b.id)) this.ctx.strokeRect(b.x, b.y, b.w, b.h);
+    }
+
+    const offsets: [number, number][] = [[1, -1], [1, 1], [-1, -1]];
+    const leaderGap = 30 * s;
+    const pad = 4 * s;
+
+    top.forEach((b) => {
+      if (b.w <= 0 || b.h <= 0) return;
+      const a = Math.min(1, b.life / p.lifeFrames);
+      // Keyed to blob id (stable across frames), not sort rank (which
+      // reshuffles every frame and would make panels teleport between corners).
+      const [dx, dy] = offsets[b.id % offsets.length];
+      const label = `${Math.floor(b.w)}×${Math.floor(b.h)} PX`;
+      const insetW = Math.max(90 * s, this.ctx.measureText(label).width + 12 * s);
+      const insetH = Math.max(34 * s, (p.fontSize + 12) * s);
+
+      const leaderX = dx > 0 ? b.x + b.w : b.x;
+      const leaderY = dy > 0 ? b.y + b.h : b.y;
+      const rawX = leaderX + dx * leaderGap - (dx > 0 ? 0 : insetW);
+      const rawY = leaderY + dy * leaderGap - (dy > 0 ? 0 : insetH);
+      const insetX = Math.max(pad, Math.min(rawX, this.width  - insetW - pad));
+      const insetY = Math.max(pad, Math.min(rawY, this.height - insetH - pad));
+
+      this.ctx.globalAlpha = a;
+      this.ctx.strokeStyle = p.strokeColor;
+      this.ctx.lineWidth   = p.strokeWidth * s;
+      this.ctx.strokeRect(b.x, b.y, b.w, b.h);
+
+      this.ctx.beginPath();
+      this.ctx.moveTo(leaderX, leaderY);
+      this.ctx.lineTo(dx > 0 ? insetX : insetX + insetW, insetY + insetH / 2);
+      this.ctx.stroke();
+
+      if (p.showLabelBG) {
+        this.ctx.fillStyle = this.rgba('#000000', 0.75);
+        this.ctx.fillRect(insetX, insetY, insetW, insetH);
+      }
+      this.ctx.strokeRect(insetX, insetY, insetW, insetH);
+      this.ctx.fillStyle = p.textColor;
+      this.ctx.fillText(label, insetX + 6 * s, insetY + insetH - 8 * s);
+    });
+
+    this.ctx.globalAlpha = 1;
   }
 
   // ─── HELPERS ──────────────────────────────────────────────────────────────
