@@ -16,6 +16,7 @@ const MODES: { id: RenderMode; label: string }[] = [
   { id: 'GHOST_TRAIL',  label: 'GHOST'   },
   { id: 'ELLIPSE',      label: 'ELLPS'   },
   { id: 'TRAIL_PATH',   label: 'PATH'    },
+  { id: 'RECON_SCAN',   label: 'RECON'   },
 ];
 
 const DEFAULT_PARAMS: TrackerParams = {

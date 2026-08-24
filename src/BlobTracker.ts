@@ -1,22 +1,23 @@
 /**
- * BlobTracker.ts — Real blob tracking + 8 render modes
+ * BlobTracker.ts — Real blob tracking + 10 render modes
  *
  * Algorithm:
  *  1. Frame differencing (luminance-weighted per-pixel diff on proxy canvas)
  *  2. Union-Find connected component labeling on motion mask
  *  3. Hungarian-style nearest-centroid assignment across frames
  *  4. Per-track trail history maintained for trajectory modes
- *  5. Heatmap accumulation canvas (separate overlay)
  *
- * Modes (inspired by BlobTracking.jl + nouses_kou aesthetic):
- *  BOX_INVERT    Classic inverted fill bounding box
- *  OUTLINE       Outline only + subtle fill
- *  CENTROID_NET  Curved centroid network (quadratic bezier links)
- *  GHOST_TRAIL   Decaying motion trail (fading boxes)
- *  CROSS_HAIR    Military targeting reticle
- *  ELLIPSE       Covariance-style concentric ellipses (Kalman aesthetic)
- *  TRAIL_PATH    Full trajectory: spawn=green, path=blue, active=red (BlobTracking.jl)
- *  HEATMAP       Persistent density accumulation overlay
+ * Modes:
+ *  BOX_INVERT        Classic inverted fill bounding box
+ *  ASCII_BOX          ASCII character-density rendering
+ *  OUTLINE             Outline only + subtle fill
+ *  CENTROID_NET     Curved centroid network (quadratic bezier links)
+ *  GHOST_TRAIL        Decaying motion trail (fading boxes)
+ *  ELLIPSE               Concentric circles (Kalman aesthetic)
+ *  TRAIL_PATH          Full trajectory: spawn=green, path=blue, active=red
+ *  RECON_SCAN         AR-tracker reticles + dashed convergence lines
+ *  FEATURE_CALLOUT  Photogrammetry-style selective measurement callouts
+ *  MESH_TRIANGULATE Dense k-nearest feature mesh with coordinate labels
  */
 
 export type RenderMode =
@@ -26,7 +27,10 @@ export type RenderMode =
   | 'CENTROID_NET'
   | 'GHOST_TRAIL'
   | 'ELLIPSE'
-  | 'TRAIL_PATH';
+  | 'TRAIL_PATH'
+  | 'RECON_SCAN'
+  | 'FEATURE_CALLOUT'
+  | 'MESH_TRIANGULATE';
 
 export interface TrackedBlob {
   id: number;
@@ -496,6 +500,7 @@ export class BlobTracker {
       case 'GHOST_TRAIL':   this.renderGhostTrail(displayBlobs);   break;
       case 'ELLIPSE':       this.renderEllipse(displayBlobs);      break;
       case 'TRAIL_PATH':    this.renderTrailPath(displayBlobs);    break;
+      case 'RECON_SCAN':    this.renderReconScan(displayBlobs);    break;
     }
 
     this.ctx.globalAlpha = 1;
@@ -780,6 +785,67 @@ export class BlobTracker {
     this.ctx.globalAlpha = 1;
   }
 
+  // ─── MODE: RECON_SCAN (AR feature-tracker reticles) ───────────────────────
+
+  private renderReconScan(blobs: TrackedBlob[]) {
+    this.ctx.globalCompositeOperation = 'source-over';
+    const p = this.params;
+    const s = this.getS();
+
+    // Shared convergence point: centroid of all currently-tracked blobs
+    let hubX = 0, hubY = 0;
+    for (const b of blobs) { hubX += b.cx; hubY += b.cy; }
+    if (blobs.length > 0) { hubX /= blobs.length; hubY /= blobs.length; }
+
+    this.prepFont();
+
+    for (const b of blobs) {
+      if (b.w <= 0 || b.h <= 0) continue;
+      const a = Math.min(1, b.life / p.lifeFrames);
+      const minDim = Math.min(b.w, b.h);
+      const armLen = Math.min(Math.max(4 * s, minDim * 0.25), minDim * 0.4);
+      const x1 = b.x, y1 = b.y, x2 = b.x + b.w, y2 = b.y + b.h;
+
+      this.ctx.globalAlpha = a;
+      this.ctx.strokeStyle = p.strokeColor;
+      this.ctx.lineWidth   = p.strokeWidth * s;
+      this.ctx.beginPath();
+      this.ctx.moveTo(x1, y1 + armLen); this.ctx.lineTo(x1, y1); this.ctx.lineTo(x1 + armLen, y1);
+      this.ctx.moveTo(x2 - armLen, y1); this.ctx.lineTo(x2, y1); this.ctx.lineTo(x2, y1 + armLen);
+      this.ctx.moveTo(x2, y2 - armLen); this.ctx.lineTo(x2, y2); this.ctx.lineTo(x2 - armLen, y2);
+      this.ctx.moveTo(x1 + armLen, y2); this.ctx.lineTo(x1, y2); this.ctx.lineTo(x1, y2 - armLen);
+      this.ctx.stroke();
+
+      if (blobs.length > 1) {
+        this.ctx.globalAlpha = a * 0.5;
+        this.ctx.setLineDash([4 * s, 4 * s]);
+        this.ctx.beginPath();
+        this.ctx.moveTo(b.cx, b.cy);
+        this.ctx.lineTo(hubX, hubY);
+        this.ctx.stroke();
+        this.ctx.setLineDash([]);
+      }
+
+      this.ctx.globalAlpha = a;
+      this.drawLabel(b, x2 + 4 * s, y1);
+    }
+
+    if (blobs.length > 1) {
+      const pulse = 0.5 + 0.5 * Math.sin(this.video.currentTime * (1000 / 300)); // ~1.9s pulse period, keyed to video time so preview and MP4 export animate identically
+      this.ctx.globalAlpha = pulse;
+      this.ctx.strokeStyle = p.strokeColor;
+      this.ctx.lineWidth   = p.strokeWidth * s;
+      const r = 6 * s;
+      this.ctx.beginPath();
+      this.ctx.moveTo(hubX - r, hubY); this.ctx.lineTo(hubX + r, hubY);
+      this.ctx.moveTo(hubX, hubY - r); this.ctx.lineTo(hubX, hubY + r);
+      this.ctx.stroke();
+    }
+
+    this.ctx.globalAlpha = 1;
+    this.ctx.setLineDash([]);
+  }
+
   // ─── HELPERS ──────────────────────────────────────────────────────────────
 
   private drawLinks() {
@@ -816,7 +882,10 @@ export class BlobTracker {
     const s = this.getS();
     const lines: string[] = [];
     if (p.showId)          lines.push(`ID ${b.id}`);
-    if (p.showCoordinates) lines.push(`${Math.floor(b.cx)}  ${Math.floor(b.cy)}`);
+    if (p.showCoordinates) {
+      if (p.renderMode === 'RECON_SCAN') lines.push(`x: ${Math.floor(b.cx)}  y: ${Math.floor(b.cy)}`);
+      else lines.push(`${Math.floor(b.cx)}  ${Math.floor(b.cy)}`);
+    }
     if (p.showSize)        lines.push(`${Math.floor(b.w)}×${Math.floor(b.h)}`);
     if (!lines.length) return;
 
