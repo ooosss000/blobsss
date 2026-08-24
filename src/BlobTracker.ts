@@ -237,12 +237,13 @@ export class BlobTracker {
         break;
       case 'ELLIPSE':
         for (const b of blobs) {
-          svg += `<ellipse cx="${b.cx}" cy="${b.cy}" rx="${b.w*0.6}" ry="${b.h*0.6}" fill="${this.rgba(p.strokeColor, 0.1)}" />`;
+          const r = (b.w + b.h) / 4;
+          svg += `<circle cx="${b.cx}" cy="${b.cy}" r="${r * 1.2}" fill="${this.rgba(p.strokeColor, 0.1)}" />`;
           for (let i = 0; i < 3; i++) {
             const rs = 0.5 + i * 0.25;
-            svg += `<ellipse cx="${b.cx}" cy="${b.cy}" rx="${b.w*rs}" ry="${b.h*rs}" fill="none" stroke="${p.strokeColor}" stroke-width="${p.strokeWidth * s}" />`;
+            svg += `<circle cx="${b.cx}" cy="${b.cy}" r="${r * 2 * rs}" fill="none" stroke="${p.strokeColor}" stroke-width="${p.strokeWidth * s}" />`;
           }
-          svg += getLabelSVG(b, b.cx + (b.w/2) * 1.4 + 6, b.cy - p.fontSize);
+          svg += getLabelSVG(b, b.cx + r * 1.4 + 6, b.cy - p.fontSize);
         }
         break;
       case 'TRAIL_PATH':
@@ -712,35 +713,38 @@ export class BlobTracker {
     this.drawLinks();
     this.prepFont();
     for (const b of blobs) {
-      const rx = b.w / 2, ry = b.h / 2;
+      // True-circle radius: average of width/height halves, so the shape
+      // is a circle regardless of the blob's bounding-box aspect ratio
+      // (previously used b.w/b.h independently, which drew a distorted oval).
+      const r = (b.w + b.h) / 4;
       const a = Math.min(1, b.life / this.params.lifeFrames);
-      
+
       this.ctx.globalAlpha = a;
       this.ctx.strokeStyle = this.params.strokeColor;
-      this.ctx.lineWidth   = this.params.strokeWidth * this.getS(); 
-      
+      this.ctx.lineWidth   = this.params.strokeWidth * this.getS();
+
       this.ctx.fillStyle = this.rgba(this.params.strokeColor, 0.1);
-      this.ctx.beginPath(); this.ctx.ellipse(b.cx, b.cy, b.w*0.6, b.h*0.6, 0, 0, Math.PI*2); this.ctx.fill();
-      
+      this.ctx.beginPath(); this.ctx.arc(b.cx, b.cy, r * 1.2, 0, Math.PI*2); this.ctx.fill();
+
       for (let i = 0; i < 3; i++) {
         const ringScale = 0.5 + i * 0.25;
         this.ctx.beginPath();
-        this.ctx.ellipse(b.cx, b.cy, b.w * ringScale, b.h * ringScale, 0, 0, Math.PI*2);
+        this.ctx.arc(b.cx, b.cy, r * 2 * ringScale, 0, Math.PI*2);
         this.ctx.stroke();
       }
-      
+
       this.ctx.globalAlpha = 1;
       // Centroid crosshair axes
       this.ctx.globalAlpha = a * 0.8;
       this.ctx.lineWidth   = this.params.strokeWidth * 0.8;
       this.ctx.beginPath();
-      this.ctx.moveTo(b.cx - rx * 0.4, b.cy); this.ctx.lineTo(b.cx + rx * 0.4, b.cy);
-      this.ctx.moveTo(b.cx, b.cy - ry * 0.4); this.ctx.lineTo(b.cx, b.cy + ry * 0.4);
+      this.ctx.moveTo(b.cx - r * 0.4, b.cy); this.ctx.lineTo(b.cx + r * 0.4, b.cy);
+      this.ctx.moveTo(b.cx, b.cy - r * 0.4); this.ctx.lineTo(b.cx, b.cy + r * 0.4);
       this.ctx.stroke();
 
       this.ctx.setLineDash([]);
       this.ctx.globalAlpha = 1;
-      this.drawLabel(b, b.cx + rx * 1.4 + 6, b.cy - this.params.fontSize);
+      this.drawLabel(b, b.cx + r * 1.4 + 6, b.cy - this.params.fontSize);
     }
     this.ctx.setLineDash([]);
     this.ctx.globalAlpha = 1;
