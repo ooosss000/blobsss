@@ -151,10 +151,20 @@ and a larger size so it reads clearly against any video frame.
 
 Remove the play/pause + restart buttons from the SOURCE panel section
 (`src/App.tsx`) — the canvas transport overlay already provides both
-whenever a video is loaded and isn't recording/encoding, making the panel
-copies redundant. `togglePlay`/`restart` functions stay (still used by the
-overlay and by the canvas `onClick`), only their panel-section JSX buttons
-are removed.
+whenever a video is loaded, making the panel copies redundant.
+`togglePlay`/`restart` functions stay (still used by the overlay and by
+the canvas `onClick`), only their panel-section JSX buttons are removed.
+
+**Correction found in code review:** the overlay's original render
+condition (`!isRecording && !isEncoding`) hid it during recording — but
+`.main-canvas.recording` sets `pointer-events: none`, so the canvas
+`onClick` fallback is inert during recording too. Since the removed panel
+buttons had no `isRecording` guard, they were the *only* working playback
+control during recording, not a redundant copy — removing them stranded
+anyone who started a recording while paused. Fixed by relaxing the
+overlay's condition to `!isEncoding` only, so it stays visible (and
+functional) throughout recording; it's safe to show since it's a DOM
+sibling never composited into the captured canvas frames.
 
 ## Testing / verification
 
