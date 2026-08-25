@@ -383,6 +383,13 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   gap: 8px;
   z-index: 40;
 }
+.transport-overlay .icon-btn {
+  width: 52px;
+  background: rgba(0, 0, 0, 0.72);
+  border-color: var(--text-hi);
+}
+.transport-overlay .icon-btn:hover { background: rgba(0, 0, 0, 0.92); }
+.transport-overlay .icon-btn:active { background: var(--text-hi); color: #000; }
 
 /* ─── KEYFRAME TIMELINE ─────────────────────────────────────────────────── */
 .kf-timeline { display: flex; flex-direction: column; gap: 6px; }
