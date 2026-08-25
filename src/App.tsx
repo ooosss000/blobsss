@@ -387,7 +387,7 @@ export default function App() {
         style={previewSize ? { width: previewSize.w, height: previewSize.h } : undefined}
         onClick={togglePlay}
       />
-      {videoSrc && !isRecording && !isEncoding && (
+      {videoSrc && !isEncoding && (
         <div className="transport-overlay">
           <button className="btn-brut icon-btn" onClick={togglePlay}>
             {isPaused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
@@ -419,16 +419,6 @@ export default function App() {
                   <span>{videoSrc ? 'CHANGE VIDEO' : 'LOAD VIDEO'}</span>
                   <input type="file" accept="video/*" style={{ display: 'none' }} onChange={handleUpload} />
                 </label>
-                {videoSrc && (
-                  <button className="btn-brut icon-btn" onClick={togglePlay}>
-                    {isPaused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
-                  </button>
-                )}
-                {videoSrc && (
-                  <button className="btn-brut icon-btn" onClick={restart} title="Restart">
-                    <RotateCcw size={14} />
-                  </button>
-                )}
               </div>
             </Section>
 
