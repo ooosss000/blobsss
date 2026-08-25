@@ -41,6 +41,8 @@ export interface TrackedBlob {
   life: number;
   spawnX: number; spawnY: number;
   trail: { x: number; y: number }[];
+  /** Position within a subdivided parent blob (0-indexed), or undefined for a primary (non-subdivided) blob. Used to identify the "anchor" sub-blob for gating one-label-per-parent logic, independent of numeric id (which grows unbounded and can't reliably distinguish primary blobs from sub-blobs once it exceeds 1000). */
+  subIndex?: number;
 }
 
 export interface TrackerParams {
@@ -475,6 +477,7 @@ export class BlobTracker {
           subBlobs.push({
             ...b,
             id: b.id * 1000 + row * n + col,
+            subIndex: row * n + col,
             cx: scx, cy: scy, x: sx, y: sy, w: sw, h: sh,
             area: b.area / (n * n),
           });
@@ -946,7 +949,7 @@ export class BlobTracker {
       this.ctx.strokeStyle = p.strokeColor;
       this.ctx.lineWidth   = p.strokeWidth * s;
       this.ctx.strokeRect(b.cx - patchSize / 2, b.cy - patchSize / 2, patchSize, patchSize);
-      if (b.id < 1000 || b.id % 1000 === 0) this.drawLabel(b, b.cx + patchSize, b.cy);
+      if (!b.subIndex) this.drawLabel(b, b.cx + patchSize, b.cy);
     }
     this.ctx.globalAlpha = 1;
   }

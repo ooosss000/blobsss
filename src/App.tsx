@@ -387,7 +387,7 @@ export default function App() {
         style={previewSize ? { width: previewSize.w, height: previewSize.h } : undefined}
         onClick={togglePlay}
       />
-      {videoSrc && !isEncoding && (
+      {videoSrc && (
         <div className="transport-overlay">
           <button className="btn-brut icon-btn" onClick={togglePlay}>
             {isPaused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
