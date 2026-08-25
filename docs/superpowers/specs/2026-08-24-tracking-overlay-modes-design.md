@@ -185,3 +185,50 @@ verification steps, same as every prior task in this project.
   turns out visually insufficient after manual review.
 - Applying the new modes' label-format overrides (`x: N y: N`, decimal
   coordinates) to any of the existing 7 modes.
+
+**Found during final whole-branch review (2026-08-25), deliberately deferred
+rather than fixed on this branch — each needs its own decision, not a
+silent fix bundled into a review cycle:**
+
+- **`FEATURE_CALLOUT` doesn't route through `drawLabel`/`drawLinks`**, so the
+  LABELS panel's `showId`/`showCoordinates`/`showSize` toggles and the
+  LINKS slider (`neighborLinks`) have no effect in this mode, even though
+  they're visible and enabled in the panel while this mode is selected.
+  This contradicts the Scope section above, which lists these as reused
+  params. Two ways to resolve it: make the mode actually honor the
+  toggles (e.g. build the panel text conditionally), or hide the
+  LABELS/LINKS controls while this mode is active, the way `TRAIL_PATH`
+  already hides the STROKE control. Needs a product decision, not an
+  implementer's guess.
+- **The file now has two idioms for "is this the primary/anchor blob,
+  not a subdivide sub-blob"**: five pre-existing modes (and `toSVG`) use
+  an id-magnitude heuristic (`id < 1000 || id % 1000 === 0`, or a
+  stricter variant missing the `< 1000` clause on two of them) that
+  silently breaks once the never-reset global blob-id counter exceeds
+  1000 (~1 minute of active tracking); `MESH_TRIANGULATE` was fixed to
+  use an explicit `subIndex` field instead. The pre-existing modes were
+  left as-is (out of scope for this branch), but they have the identical
+  latent bug `MESH_TRIANGULATE` was just fixed for. Follow-up: replace
+  the id-heuristic at the remaining 5-6 call sites with `!b.subIndex`.
+- **`LOAD VIDEO`/`CHANGE VIDEO` isn't disabled during recording or
+  encoding** (`src/App.tsx`, SOURCE section) — pre-existing gap, but
+  this branch rewrote that exact JSX block and it's now the only
+  unguarded control in that row (every export control nearby already has
+  `disabled={isRecording || isEncoding}`). Swapping the video source
+  mid-recording desyncs the canvas from the encoder's configured
+  dimensions and produces a silently truncated/corrupt MP4 with no error
+  shown to the user.
+- **Transport overlay can be visually occluded by the recording preview
+  thumbnail below ~760px viewport width** — both are absolutely
+  positioned, and the thumbnail's `z-index: 10000` beats the overlay's
+  `z-index: 40` when they overlap. The overlay's buttons stay clickable
+  throughout (the thumbnail has `pointer-events: none`), just harder to
+  see. Cosmetic, narrow-viewport-only.
+- **SVG export silently produces incomplete output for 5 of 10 render
+  modes** now (`ASCII_BOX`, `GHOST_TRAIL`, and all 3 new modes have no
+  `toSVG()` case) — the export button stays enabled and downloads a
+  well-formed but visually wrong file (just the optional neighbor-link
+  lines, nothing else) with no warning. At 2/10 this was an obscure
+  corner; at 5/10 it's a coin flip. Cheapest fix if picked up later: gate
+  the "Export SVG" button's `disabled`/tooltip on render mode rather than
+  implementing the missing SVG cases.
