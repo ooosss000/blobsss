@@ -12,10 +12,12 @@ interface KeyframeTimelineProps {
   onDelete: (id: string) => void;
   onRetime: (id: string, time: number) => void;
   onSeek: (time: number) => void;
+  /** Disables all track interaction (scrub, marker drag) — set during MP4 recording/encoding, matching the other export-adjacent controls in App.tsx. Scrubbing mid-recording would splice an arbitrary content jump into the capture while the encoder's synthetic timestamps stay smooth. */
+  disabled: boolean;
 }
 
 export function KeyframeTimeline({
-  keyframes, selectedId, currentTime, duration, onSelect, onDelete, onRetime, onSeek,
+  keyframes, selectedId, currentTime, duration, onSelect, onDelete, onRetime, onSeek, disabled,
 }: KeyframeTimelineProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -34,12 +36,14 @@ export function KeyframeTimeline({
 
   const handleMarkerPointerDown = (id: string) => (e: React.PointerEvent) => {
     e.stopPropagation();
+    if (disabled) return;
     setDraggingId(id);
     draggedRef.current = false;
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
   };
 
   const handleTrackPointerDown = (e: React.PointerEvent) => {
+    if (disabled) return;
     if (e.button !== 0 || !e.isPrimary) return;
     // Only reaches here if no marker's own pointerdown already
     // stopPropagation()'d — i.e. the user grabbed empty track, not a marker.
@@ -64,7 +68,7 @@ export function KeyframeTimeline({
   return (
     <div className="kf-timeline">
       <div
-        className="kf-track"
+        className={`kf-track${disabled ? ' disabled' : ''}`}
         ref={trackRef}
         onPointerDown={handleTrackPointerDown}
         onPointerMove={handlePointerMove}

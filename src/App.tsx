@@ -112,6 +112,11 @@ export default function App() {
     const onTime  = () => setCurrentTime(vid.currentTime);
     const onSeeked = () => {
       setCurrentTime(vid.currentTime);
+      // Unconditional: a seek invalidates blobs/trails/prevData regardless of
+      // play state — while paused this prevents stale overlays from the old
+      // frame persisting into renderOnce(); while playing it prevents the
+      // next processFrame() from diffing against a pre-seek prevData buffer.
+      trackerRef.current?.resetTracking();
       if (vid.paused) trackerRef.current?.renderOnce();
     };
     const onLoadedData = () => { trackerRef.current?.renderOnce(); };
@@ -548,6 +553,7 @@ export default function App() {
                     onDelete={deleteKeyframe}
                     onRetime={retimeKeyframe}
                     onSeek={seekTo}
+                    disabled={isRecording || isEncoding}
                   />
                   <button className="btn-brut flex-1 mt-8" onClick={addKeyframe}>
                     <Plus size={13} />

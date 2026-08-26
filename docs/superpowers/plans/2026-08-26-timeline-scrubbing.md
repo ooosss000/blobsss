@@ -242,6 +242,57 @@ git add src/KeyframeTimeline.tsx src/App.tsx src/index.css
 git commit -m "feat: add click/drag-to-seek on the keyframe timeline track"
 ```
 
+**Correction found in final whole-branch holistic review (2026-08-26), fixed
+on this branch — two Major issues, plus one Minor folded into the same fix:**
+
+- **Major: scrub-while-paused left stale blob/trail overlays on the wrong
+  frame.** `seekTo` sets `videoRef.current.currentTime` directly, which
+  fires `seeked` → `renderOnce()` when paused (pre-existing machinery from
+  an earlier feature). But `BlobTracker.renderOnce()` only redraws the
+  video frame and calls `renderBlobs()` — it never re-runs detection or
+  clears `this.blobs`/`this.prevData`/per-blob `trail` arrays. Every paused
+  scrub was redrawing the new frame with blob boxes/labels/trails computed
+  at the OLD time — worst in GHOST_TRAIL/TRAIL_PATH, where a stale trail
+  got smeared across an unrelated frame, defeating the plan's own stated
+  use case (scrub-while-paused to verify keyframe placement). Fixed by
+  adding `public resetTracking()` to `BlobTracker.ts` (clears `this.blobs`
+  and `this.prevData`; per-blob trails live inside the discarded blob
+  objects so clearing `blobs` clears them too) and calling it
+  unconditionally from the `seeked` handler in `App.tsx`, before the
+  paused-only `renderOnce()` call — unconditionally (not just when paused)
+  so `prevData` doesn't stay stale for the very next `processFrame()`
+  after a scrub-while-playing either. This also resolves, for free, the
+  one-frame spurious-blob glitch that scrubbing during playback caused
+  (same root cause: stale `prevData` diffed against the post-seek frame).
+- **Major: nothing disabled scrubbing during an active recording.** Every
+  other export-adjacent control (resolution select, PNG/SVG export, record
+  button) is gated with `disabled={isRecording || isEncoding}`, but the new
+  `KeyframeTimeline` track had no such guard. The MP4 capture loop assigns
+  strictly-monotonic synthetic timestamps regardless of the video's actual
+  `currentTime`, so a click/drag on the timeline mid-recording could splice
+  an arbitrary content jump (or backward jump) into the capture while
+  exported timestamps stayed smooth — a hard un-flagged jump-cut in the
+  output. Fixed by adding a required `disabled: boolean` prop to
+  `KeyframeTimeline`, passed as `isRecording || isEncoding` from `App.tsx`;
+  `handleTrackPointerDown` and `handleMarkerPointerDown` both early-return
+  before any state mutation or `setPointerCapture` when disabled (retiming
+  can therefore never fire either, since dragging can never start). A new
+  `.kf-track.disabled` CSS rule (`pointer-events: none`, dimmed opacity,
+  `cursor: not-allowed`) makes the state visible and — since `pointer-events`
+  is inherited and markers don't override it — also blocks marker
+  interaction at the DOM level as a second line of defense on top of the
+  JS guards.
+
+**Known minor inefficiency, found in the same review, not fixed on this
+branch:** each paused `onSeek` now double-renders — once directly from the
+`seeked` listener's `renderOnce()` call, once again from the pre-existing
+"repaint paused preview" effect (`App.tsx`) that also depends on
+`currentTime`. Wasteful during a continuous drag-scrub but not incorrect;
+removing either call risks disturbing the pre-existing effect's other
+responsibilities (repainting after param/keyframe edits unrelated to
+seeking), so it was left alone rather than risk a change outside this
+task's scope for a performance-only concern.
+
 ---
 
 ## Task 2: Regression pass

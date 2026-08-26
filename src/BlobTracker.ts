@@ -317,6 +317,22 @@ export class BlobTracker {
   }
   public stop() { this.isPlaying = false; }
 
+  /**
+   * Discards all tracking state: current blobs (and their per-blob `trail`
+   * histories, which live inside the discarded blob objects) and the
+   * previous-frame diff buffer. Must be called on every seek — a seek jumps
+   * the video to an unrelated frame, so blobs/trails computed before the
+   * jump describe motion that no longer exists, and `prevData` from before
+   * the jump would otherwise be diffed against the post-seek frame on the
+   * very next `processFrame()`, producing a bogus one-frame motion blob.
+   * Safe to call while blobs is already empty; `renderBlobs()`/
+   * `getDisplayBlobs()` both handle a zero-length `this.blobs` cleanly.
+   */
+  public resetTracking() {
+    this.blobs = [];
+    this.prevData = null;
+  }
+
   /** Repaints the current frame with current params, without motion detection or blob aging. Used to refresh the preview after a param edit while paused. */
   public renderOnce() {
     if (!this.width || !this.height) return;

@@ -402,6 +402,11 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   touch-action: none;
   user-select: none;
 }
+.kf-track.disabled {
+  pointer-events: none;
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .kf-playhead {
   position: absolute;
   top: 0; bottom: 0;
