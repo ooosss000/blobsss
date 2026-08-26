@@ -40,6 +40,7 @@ export function KeyframeTimeline({
   };
 
   const handleTrackPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0 || !e.isPrimary) return;
     // Only reaches here if no marker's own pointerdown already
     // stopPropagation()'d — i.e. the user grabbed empty track, not a marker.
     setScrubbing(true);
@@ -69,6 +70,7 @@ export function KeyframeTimeline({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
+        onLostPointerCapture={handlePointerUp}
       >
         <div className="kf-playhead" style={{ left: `${pct(currentTime)}%` }} />
         {keyframes.map(k => (

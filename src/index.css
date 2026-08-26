@@ -400,6 +400,7 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   border: 1px solid var(--border);
   cursor: pointer;
   touch-action: none;
+  user-select: none;
 }
 .kf-playhead {
   position: absolute;
@@ -417,6 +418,13 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   border: 1px solid var(--bg);
   cursor: grab;
   touch-action: none;
+}
+.kf-marker::before {
+  content: '';
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 20px; height: 28px;
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
 .kf-marker.selected { background: var(--accent); }
 .kf-marker:active { cursor: grabbing; }
