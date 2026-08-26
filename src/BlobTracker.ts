@@ -56,13 +56,15 @@ export interface TrackerParams {
   maxBlobDim: number;     // Max width OR height of a blob in proxy-pixels (caps blob size)
   // Density
   subdivide: number;       // split each detected blob into NxN sub-boxes (1=off, 2=4 boxes, 3=9, etc.)
-  // Color grading — visual only, never affects the motion-detection proxy
-  brightness: number;      // CSS brightness() multiplier, 1 = neutral
-  contrast: number;        // CSS contrast() multiplier, 1 = neutral
-  saturation: number;      // CSS saturate() multiplier, 1 = neutral
-  hue: number;             // CSS hue-rotate() degrees, 0 = neutral
-  gamma: number;           // SVG feComponentTransfer gamma, 1 = neutral (exponent = 1/gamma)
-  temperature: number;     // warm(+)/cool(-) R/B channel shift via SVG feColorMatrix, 0 = neutral
+  // Color grading — visual only, never affects the motion-detection proxy.
+  // Applied via manual per-pixel math (see BlobTracker.applyPixelGrading),
+  // not ctx.filter — see that method's doc comment for why.
+  brightness: number;      // multiplier, 1 = neutral
+  contrast: number;        // multiplier, 1 = neutral
+  saturation: number;      // multiplier, 1 = neutral
+  hue: number;             // rotation in degrees, 0 = neutral
+  gamma: number;           // gamma curve, 1 = neutral (exponent = 1/gamma)
+  temperature: number;     // warm(+)/cool(-) R/B channel shift, 0 = neutral
   // Visual
   renderMode: RenderMode;
   neighborLinks: number;
@@ -89,6 +91,24 @@ export class BlobTracker {
   private proxyCanvas: HTMLCanvasElement;
   private proxyCtx: CanvasRenderingContext2D;
 
+  // Intermediate buffer holding the raw video frame. Color grading and the
+  // mono-mode grayscale treatment are both applied here via direct per-pixel
+  // ImageData manipulation, NOT via ctx.filter (neither native CSS filter
+  // functions nor SVG filter references) — ctx.filter proved unreliable on
+  // at least one real browser/GPU combo (Brave/Chromium): applying ANY of
+  // brightness/contrast/hue/gamma/temperature via ctx.filter while
+  // drawImage()-ing video-derived content caused the canvas to silently
+  // stop updating (no thrown error, no console warning) while the rest of
+  // the render loop kept running — every attempt at narrowing which
+  // specific filter primitive/type caused it (native hue-rotate() vs SVG
+  // feColorMatrix type="hueRotate" vs type="matrix", routing through a
+  // filter-free buffer to avoid touching the video decoder's texture)
+  // still hung on some OTHER grading control, so this now avoids the
+  // ctx.filter API entirely rather than continuing to chase which specific
+  // usage of it is safe.
+  private bufferCanvas: HTMLCanvasElement;
+  private bufferCtx: CanvasRenderingContext2D;
+
   private prevData: Uint8ClampedArray | null = null;
   private currFramePixels: Uint8ClampedArray | null = null;
   private blobs: TrackedBlob[] = [];
@@ -103,27 +123,19 @@ export class BlobTracker {
   private proxyH = 0;
   private scaleX = 1; private scaleY = 1;
   private lastFrameTime = 0;
-  private gammaFuncR: SVGFEFuncRElement | null;
-  private gammaFuncG: SVGFEFuncGElement | null;
-  private gammaFuncB: SVGFEFuncBElement | null;
-  private tempMatrix: SVGFEColorMatrixElement | null;
 
   constructor(video: HTMLVideoElement, canvas: HTMLCanvasElement, params: TrackerParams) {
     this.video = video;
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
-    this.gammaFuncR = document.getElementById('bs-gamma-r') as SVGFEFuncRElement | null;
-    this.gammaFuncG = document.getElementById('bs-gamma-g') as SVGFEFuncGElement | null;
-    this.gammaFuncB = document.getElementById('bs-gamma-b') as SVGFEFuncBElement | null;
-    this.tempMatrix = document.getElementById('bs-temp-matrix') as SVGFEColorMatrixElement | null;
-    if (!this.gammaFuncR || !this.gammaFuncG || !this.gammaFuncB || !this.tempMatrix) {
-      console.warn('BlobTracker: color-grading SVG filter elements not found in DOM — gamma/temperature grading will be unavailable.');
-    }
     this.baseParams = params;
     this.params = params;
 
     this.proxyCanvas = document.createElement('canvas');
     this.proxyCtx = this.proxyCanvas.getContext('2d', { willReadFrequently: true })!;
+
+    this.bufferCanvas = document.createElement('canvas');
+    this.bufferCtx = this.bufferCanvas.getContext('2d', { willReadFrequently: true })!;
 
     this.resize();
   }
@@ -195,6 +207,9 @@ export class BlobTracker {
     this.canvas.style.width = `${this.width}px`;
     this.canvas.style.height = `${this.height}px`;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    this.bufferCanvas.width = this.width;
+    this.bufferCanvas.height = this.height;
 
     const oldPH = this.proxyH;
     const videoAspect = (this.video.videoHeight || 1080) / (this.video.videoWidth || 1920);
@@ -345,8 +360,14 @@ export class BlobTracker {
 
   private rvfcLoop = () => {
     if (!this.isPlaying) return;
-    this.processFrame();
     (this.video as any).requestVideoFrameCallback(this.rvfcLoop);
+    // Throttle to ~30fps: on a 60fps (or higher) source, requestVideoFrameCallback
+    // fires once per native frame with no built-in cap, which doubles (or worse)
+    // the per-frame grading/detection cost for no visible benefit over 30fps.
+    const now = performance.now();
+    if (now - this.lastFrameTime < 30) return;
+    this.lastFrameTime = now;
+    this.processFrame();
   };
 
   private loop = () => {
@@ -365,54 +386,124 @@ export class BlobTracker {
   private getS() { return this.width / 1280; }
 
   /**
-   * Composes the ctx.filter string for color grading (brightness/contrast/
-   * saturation via native CSS filter functions; hue/gamma/temperature are
-   * each omitted entirely when neutral, both as a small perf win and to
-   * avoid the SVG-filter linearRGB round-trip when it isn't needed).
-   * Gamma/temperature use the SVG filters defined in App.tsx's JSX,
-   * referenced by url(#id) and updated imperatively here so this stays in
-   * sync with per-frame keyframe-resolved params, not just React's render
-   * cycle. Visual only — never applied to the proxy canvas that motion
-   * detection reads.
+   * Hue rotation as a numeric 3x3 RGB coefficient matrix (same formula the
+   * SVG spec uses to define feColorMatrix type="hueRotate", expanded here
+   * so it can run as plain per-pixel arithmetic instead of a DOM filter).
    */
-  private buildGradingFilter(): string {
+  private static hueRotationCoeffs(degrees: number): readonly [number, number, number, number, number, number, number, number, number] {
+    const rad = degrees * Math.PI / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const lumR = 0.213, lumG = 0.715, lumB = 0.072;
+    return [
+      lumR + cos * (1 - lumR) + sin * (-lumR),
+      lumG + cos * (-lumG) + sin * (-lumG),
+      lumB + cos * (-lumB) + sin * (1 - lumB),
+      lumR + cos * (-lumR) + sin * (0.143),
+      lumG + cos * (1 - lumG) + sin * (0.140),
+      lumB + cos * (-lumB) + sin * (-0.283),
+      lumR + cos * (-lumR) + sin * (-(1 - lumR)),
+      lumG + cos * (-lumG) + sin * (lumG),
+      lumB + cos * (1 - lumB) + sin * (lumB),
+    ];
+  }
+
+  /**
+   * Applies color grading and/or the mono-mode grayscale treatment directly
+   * to the buffer's pixel data (in place), replicating what a
+   * `brightness() contrast() saturate() hue-rotate() gamma temperature`
+   * ctx.filter chain would have done, in the same left-to-right order.
+   *
+   * Deliberately NOT implemented via ctx.filter (native or SVG-referenced):
+   * on at least one real browser/GPU combo (Brave/Chromium), applying any
+   * of brightness/contrast/hue/gamma/temperature through ctx.filter while
+   * drawImage()-ing video-derived content caused the canvas to silently
+   * stop updating — no thrown error — while the rest of the render loop
+   * (motion detection, blob overlay) kept running, which is consistent
+   * with the compositor's filter pass hanging rather than a JS exception.
+   * Every attempt at isolating which specific filter usage was unsafe
+   * (native hue-rotate() vs SVG type="hueRotate" vs type="matrix", a
+   * filter-free intermediate buffer, memoizing attribute writes) still hung
+   * on some OTHER grading control, so this avoids ctx.filter entirely.
+   */
+  private applyPixelGrading(applyGrading: boolean, applyMono: boolean) {
     const p = this.params;
-    const parts: string[] = [];
-    if (p.brightness !== 1) parts.push(`brightness(${p.brightness})`);
-    if (p.contrast !== 1) parts.push(`contrast(${p.contrast})`);
-    if (p.saturation !== 1) parts.push(`saturate(${p.saturation})`);
-    if (p.hue !== 0) parts.push(`hue-rotate(${p.hue}deg)`);
-    if (p.gamma !== 1 && this.gammaFuncR && this.gammaFuncG && this.gammaFuncB) {
-      const gammaExponent = String(1 / Math.max(0.01, p.gamma));
-      this.gammaFuncR.setAttribute('exponent', gammaExponent);
-      this.gammaFuncG.setAttribute('exponent', gammaExponent);
-      this.gammaFuncB.setAttribute('exponent', gammaExponent);
-      parts.push('url(#bs-gamma-filter)');
+    const doBrightness = applyGrading && p.brightness !== 1;
+    const doContrast = applyGrading && p.contrast !== 1;
+    const doSaturate = applyGrading && p.saturation !== 1;
+    const doHue = applyGrading && p.hue !== 0;
+    const doGamma = applyGrading && p.gamma !== 1;
+    const doTemp = applyGrading && p.temperature !== 0;
+    if (!doBrightness && !doContrast && !doSaturate && !doHue && !doGamma && !doTemp && !applyMono) return;
+
+    const brightness = p.brightness;
+    const contrast = p.contrast;
+    const saturation = p.saturation;
+    const [hm00, hm01, hm02, hm10, hm11, hm12, hm20, hm21, hm22] =
+      doHue ? BlobTracker.hueRotationCoeffs(p.hue) : [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    // Gamma is the one nonlinear, per-channel step (Math.pow), and it's the
+    // same curve for every pixel — precompute it as a 256-entry lookup table
+    // once per frame instead of calling Math.pow (a comparatively slow
+    // transcendental function) up to 3x per pixel, millions of times/frame.
+    let gammaLUT: Uint8ClampedArray | null = null;
+    if (doGamma) {
+      const gammaExponent = 1 / Math.max(0.01, p.gamma);
+      gammaLUT = new Uint8ClampedArray(256);
+      for (let v = 0; v < 256; v++) gammaLUT[v] = 255 * Math.pow(v / 255, gammaExponent);
     }
-    if (p.temperature !== 0 && this.tempMatrix) {
-      const k = 0.3;
-      const rGain = (1 + p.temperature * k).toFixed(3);
-      const bGain = (1 - p.temperature * k).toFixed(3);
-      this.tempMatrix.setAttribute('values', `${rGain} 0 0 0 0  0 1 0 0 0  0 0 ${bGain} 0 0  0 0 0 1 0`);
-      parts.push('url(#bs-temp-filter)');
+    const tempK = 0.3;
+    const rGain = doTemp ? 1 + p.temperature * tempK : 1;
+    const bGain = doTemp ? 1 - p.temperature * tempK : 1;
+
+    const imgData = this.bufferCtx.getImageData(0, 0, this.width, this.height);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      let r = d[i], g = d[i + 1], b = d[i + 2];
+
+      if (doBrightness) { r *= brightness; g *= brightness; b *= brightness; }
+      if (doContrast) { r = (r - 128) * contrast + 128; g = (g - 128) * contrast + 128; b = (b - 128) * contrast + 128; }
+      if (doSaturate) {
+        const lum = 0.213 * r + 0.715 * g + 0.072 * b;
+        r = lum + (r - lum) * saturation; g = lum + (g - lum) * saturation; b = lum + (b - lum) * saturation;
+      }
+      if (doHue) {
+        const nr = hm00 * r + hm01 * g + hm02 * b;
+        const ng = hm10 * r + hm11 * g + hm12 * b;
+        const nb = hm20 * r + hm21 * g + hm22 * b;
+        r = nr; g = ng; b = nb;
+      }
+      if (gammaLUT) {
+        r = gammaLUT[r < 0 ? 0 : r > 255 ? 255 : r | 0];
+        g = gammaLUT[g < 0 ? 0 : g > 255 ? 255 : g | 0];
+        b = gammaLUT[b < 0 ? 0 : b > 255 ? 255 : b | 0];
+      }
+      if (doTemp) { r *= rGain; b *= bGain; }
+      if (applyMono) {
+        const lum = 0.213 * r + 0.715 * g + 0.072 * b;
+        r = g = b = (lum - 128) * 1.5 + 128;
+      }
+
+      d[i]     = r < 0 ? 0 : r > 255 ? 255 : r;
+      d[i + 1] = g < 0 ? 0 : g > 255 ? 255 : g;
+      d[i + 2] = b < 0 ? 0 : b > 255 ? 255 : b;
     }
-    return parts.join(' ');
+    this.bufferCtx.putImageData(imgData, 0, 0);
   }
 
   private drawVideoFrame() {
-    this.ctx.imageSmoothingEnabled = true;
-    this.ctx.imageSmoothingQuality = 'high';
+    this.bufferCtx.drawImage(this.video, 0, 0, this.width, this.height);
 
     // Mono modes (TRAIL_PATH/ASCII_BOX) intentionally force grayscale AFTER
     // grading, so hue/saturation/temperature are flattened away in those
     // modes by design — brightness/contrast/gamma still meaningfully affect
     // the resulting mono look. This is deliberate, not a bug to "fix" later.
     const isMonoMode = (this.params.renderMode === 'TRAIL_PATH' || this.params.renderMode === 'ASCII_BOX');
-    const grading = (this.isExporting && !this.gradeExport) ? '' : this.buildGradingFilter();
-    const mono = isMonoMode ? 'grayscale(100%) brightness(1.0) contrast(1.5)' : '';
-    this.ctx.filter = [grading, mono].filter(Boolean).join(' ') || 'none';
-    this.ctx.drawImage(this.video, 0, 0, this.width, this.height);
-    this.ctx.filter = 'none';
+    const applyGrading = !(this.isExporting && !this.gradeExport);
+    this.applyPixelGrading(applyGrading, isMonoMode);
+
+    this.ctx.imageSmoothingEnabled = true;
+    this.ctx.imageSmoothingQuality = 'high';
+    this.ctx.drawImage(this.bufferCanvas, 0, 0, this.width, this.height);
 
     // Set smoothing to false for sharp brutalist graphics/text
     this.ctx.imageSmoothingEnabled = false;

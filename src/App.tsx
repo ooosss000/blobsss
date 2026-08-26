@@ -413,20 +413,6 @@ export default function App() {
 
   return (
     <div className="app-root">
-      <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true">
-        <defs>
-          <filter id="bs-gamma-filter" colorInterpolationFilters="sRGB">
-            <feComponentTransfer>
-              <feFuncR id="bs-gamma-r" type="gamma" amplitude="1" exponent="1" offset="0" />
-              <feFuncG id="bs-gamma-g" type="gamma" amplitude="1" exponent="1" offset="0" />
-              <feFuncB id="bs-gamma-b" type="gamma" amplitude="1" exponent="1" offset="0" />
-            </feComponentTransfer>
-          </filter>
-          <filter id="bs-temp-filter" colorInterpolationFilters="sRGB">
-            <feColorMatrix id="bs-temp-matrix" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" />
-          </filter>
-        </defs>
-      </svg>
       <video ref={videoRef} src={videoSrc || undefined} loop playsInline style={{ display: 'none' }} />
       <canvas
         ref={canvasRef}
