@@ -8,7 +8,7 @@ export interface Keyframe {
 
 export const MIN_KEYFRAME_GAP = 0.05; // seconds
 
-const NUMERIC_KEYS = [
+export const NUMERIC_KEYS = [
   'diffThreshold', 'minArea', 'maxArea', 'maxBlobs', 'lifeFrames',
   'jitter', 'maxBlobDim', 'strokeWidth', 'fontSize', 'asciiContrast',
   'brightness', 'contrast', 'saturation', 'hue', 'gamma', 'temperature',

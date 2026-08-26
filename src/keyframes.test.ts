@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveActiveParams, clampExportPreviewSize, clampKeyframeTime, type Keyframe } from './keyframes';
+import { resolveActiveParams, clampExportPreviewSize, clampKeyframeTime, NUMERIC_KEYS, type Keyframe } from './keyframes';
 import type { TrackerParams } from './BlobTracker';
 
 const baseParams: TrackerParams = {
@@ -92,12 +92,26 @@ describe('resolveActiveParams', () => {
     expect(mid.diffThreshold).toBe(20);
   });
 
-  it('interpolates the new color-grading numeric fields', () => {
-    const a = kf('a', 0, { brightness: 1, gamma: 1, temperature: 0 });
-    const b = kf('b', 10, { brightness: 1.5, gamma: 2, temperature: 1 });
-    expect(resolveActiveParams([a, b], 5, baseParams).brightness).toBeCloseTo(1.25, 5);
-    expect(resolveActiveParams([a, b], 5, baseParams).gamma).toBeCloseTo(1.5, 5);
-    expect(resolveActiveParams([a, b], 5, baseParams).temperature).toBeCloseTo(0.5, 5);
+  it.each(NUMERIC_KEYS)('interpolates %s linearly between two keyframes', (key) => {
+    const a = kf('a', 0, { [key]: 0 } as Partial<TrackerParams>);
+    const b = kf('b', 10, { [key]: 10 } as Partial<TrackerParams>);
+    const mid = resolveActiveParams([a, b], 5, baseParams);
+    expect(mid[key]).toBeCloseTo(5, 5);
+  });
+
+  it('keeps every color-grading field categorized as numeric', () => {
+    // it.each(NUMERIC_KEYS) above only ever tests whatever IS in the array —
+    // if a key silently moves to the wrong array (e.g. DISCRETE_KEYS), tsc's
+    // exhaustiveness guard stays clean (the key is still categorized
+    // *somewhere*) and it.each just generates one fewer test case, with
+    // nothing failing. This test pins each grading key by name so a
+    // miscategorization produces an explicit failure instead of a silently
+    // shrinking test count.
+    const expectedNumericGradingKeys: (keyof TrackerParams)[] =
+      ['brightness', 'contrast', 'saturation', 'hue', 'gamma', 'temperature'];
+    for (const key of expectedNumericGradingKeys) {
+      expect(NUMERIC_KEYS).toContain(key);
+    }
   });
 });
 
