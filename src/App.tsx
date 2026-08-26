@@ -77,6 +77,7 @@ export default function App() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const keyframesRef = useRef<Keyframe[]>(keyframes);
   const paramsRef = useRef<TrackerParams>(params);
+  const gradeExportRef = useRef(gradeExport);
   useEffect(() => { keyframesRef.current = keyframes; }, [keyframes]);
   useEffect(() => { paramsRef.current = params; }, [params]);
 
@@ -101,7 +102,7 @@ export default function App() {
       setDuration(vid.duration || 0);
       trackerRef.current?.stop();
       trackerRef.current = new BlobTracker(vid, cv, paramsRef.current);
-      trackerRef.current.setGradeExport(gradeExport);
+      trackerRef.current.setGradeExport(gradeExportRef.current);
       if (keyframesRef.current.length > 0) {
         trackerRef.current.setLiveParamsResolver((t) => resolveActiveParams(keyframesRef.current, t, paramsRef.current));
       }
@@ -148,7 +149,10 @@ export default function App() {
 
   useEffect(() => { trackerRef.current?.updateParams(params); }, [params]);
 
-  useEffect(() => { trackerRef.current?.setGradeExport(gradeExport); }, [gradeExport]);
+  useEffect(() => {
+    gradeExportRef.current = gradeExport;
+    trackerRef.current?.setGradeExport(gradeExport);
+  }, [gradeExport]);
 
   // Keep selection valid only when it dangles (points at a deleted keyframe);
   // never override an intentional deselect (selectedKeyframeId === null)
