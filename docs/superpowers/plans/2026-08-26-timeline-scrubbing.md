@@ -283,6 +283,27 @@ on this branch — two Major issues, plus one Minor folded into the same fix:**
   interaction at the DOM level as a second line of defense on top of the
   JS guards.
 
+**Follow-up correction, found on re-review of the above fix (2026-08-26):**
+the `pointerdown` guards close off a *new* drag/scrub starting while
+disabled, but left one gap: if a drag/scrub is already in flight (pointer
+down, capture already acquired via `setPointerCapture`) and `disabled`
+flips `false → true` mid-gesture — e.g. the user starts scrubbing, then
+triggers Record while still holding the pointer down — `handlePointerMove`
+kept calling `onSeek`/`onRetime` for the rest of that gesture. The
+`.kf-track.disabled` CSS backup doesn't help here: an active pointer
+capture bypasses hit-testing entirely, so `pointer-events: none` is
+irrelevant once capture has fired. This reopened the same corruption
+scenario (an un-flagged jump-cut baked into the exported MP4) the fix
+above was meant to close. Fixed by adding a `useEffect(() => { if
+(disabled) { setDraggingId(null); setScrubbing(false); } }, [disabled])`
+in `KeyframeTimeline.tsx`, which ends the in-flight gesture the instant
+`disabled` becomes true regardless of whether another pointer event ever
+arrives — plus a matching `disabled` early-return added to
+`handlePointerMove` itself for defense-in-depth. Neither release the
+OS-level pointer capture, but that's fine: the browser releases it
+automatically on the next `pointerup`, and with gesture state already
+cleared, no further seeks/retimes can happen in the meantime.
+
 **Known minor inefficiency, found in the same review, not fixed on this
 branch:** each paused `onSeek` now double-renders — once directly from the
 `seeked` listener's `renderOnce()` call, once again from the pre-existing

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { Keyframe } from './keyframes';
 import { clampKeyframeTime } from './keyframes';
@@ -23,6 +23,29 @@ export function KeyframeTimeline({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [scrubbing, setScrubbing] = useState(false);
   const draggedRef = useRef(false);
+
+  // Closes a gap a pointerdown guard alone can't: if disabled flips true
+  // mid-gesture (pointer already down, capture already acquired — e.g. the
+  // user starts scrubbing, then triggers Record while still holding the
+  // pointer), the CSS `pointer-events: none` backup on .kf-track is inert
+  // (an active pointer capture bypasses hit-testing), and handlePointerMove
+  // would otherwise keep calling onSeek/onRetime for the rest of the
+  // gesture. This effect ends the in-flight gesture the instant disabled
+  // becomes true, independent of whether another pointer event ever
+  // arrives. It doesn't release the OS-level pointer capture itself, but
+  // that's fine — the browser releases it automatically on the next
+  // pointerup, and with draggingId/scrubbing already cleared (plus the
+  // disabled guard in handlePointerMove below), no further seeks/retimes
+  // can happen even while capture is technically still held.
+  useEffect(() => {
+    // Self-terminating: only runs when `disabled` itself changes (not on
+    // every render), and clearing gesture state here can't feed back into
+    // `disabled` (an external prop), so there's no cascading-render risk —
+    // this is the one-shot "external signal forces internal state to reset"
+    // case the lint rule can't distinguish from an unbounded loop.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (disabled) { setDraggingId(null); setScrubbing(false); }
+  }, [disabled]);
 
   const pct = (t: number) => (duration > 0 ? (t / duration) * 100 : 0);
 
@@ -53,6 +76,7 @@ export function KeyframeTimeline({
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
+    if (disabled) return;
     if (draggingId) {
       draggedRef.current = true;
       const proposed = clientXToTime(e.clientX);
