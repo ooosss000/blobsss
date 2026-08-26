@@ -11,14 +11,25 @@ export const MIN_KEYFRAME_GAP = 0.05; // seconds
 const NUMERIC_KEYS = [
   'diffThreshold', 'minArea', 'maxArea', 'maxBlobs', 'lifeFrames',
   'jitter', 'maxBlobDim', 'strokeWidth', 'fontSize', 'asciiContrast',
+  'brightness', 'contrast', 'saturation', 'hue', 'gamma', 'temperature',
 ] as const satisfies readonly (keyof TrackerParams)[];
 
 const COLOR_KEYS = ['strokeColor', 'textColor'] as const satisfies readonly (keyof TrackerParams)[];
 
 const DISCRETE_KEYS = [
   'subdivide', 'renderMode', 'neighborLinks', 'fontFamily',
-  'showCoordinates', 'showId', 'showSize', 'showLabelBG',
+  'showCoordinates', 'showId', 'showSize', 'showLabelBG', 'gradeExport',
 ] as const satisfies readonly (keyof TrackerParams)[];
+
+type _UncategorizedParamKeys = Exclude<
+  keyof TrackerParams,
+  typeof NUMERIC_KEYS[number] | typeof COLOR_KEYS[number] | typeof DISCRETE_KEYS[number]
+>;
+// If this errors, a TrackerParams field exists that isn't in any of the
+// three categorization arrays above — it would silently fail to
+// interpolate/hard-switch. Add it to the correct array.
+const _exhaustiveParamCheck: _UncategorizedParamKeys extends never ? true : ['uncategorized TrackerParams keys:', _UncategorizedParamKeys] = true;
+void _exhaustiveParamCheck;
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const clean = hex.replace('#', '');

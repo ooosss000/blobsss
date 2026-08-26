@@ -56,6 +56,14 @@ export interface TrackerParams {
   maxBlobDim: number;     // Max width OR height of a blob in proxy-pixels (caps blob size)
   // Density
   subdivide: number;       // split each detected blob into NxN sub-boxes (1=off, 2=4 boxes, 3=9, etc.)
+  // Color grading — visual only, never affects the motion-detection proxy
+  brightness: number;      // CSS brightness() multiplier, 1 = neutral
+  contrast: number;        // CSS contrast() multiplier, 1 = neutral
+  saturation: number;      // CSS saturate() multiplier, 1 = neutral
+  hue: number;             // CSS hue-rotate() degrees, 0 = neutral
+  gamma: number;           // SVG feComponentTransfer gamma, 1 = neutral (exponent = 1/gamma)
+  temperature: number;     // warm(+)/cool(-) R/B channel shift via SVG feColorMatrix, 0 = neutral
+  gradeExport: boolean;    // if false, MP4 export ignores grading regardless of preview
   // Visual
   renderMode: RenderMode;
   neighborLinks: number;
