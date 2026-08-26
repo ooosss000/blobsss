@@ -99,14 +99,26 @@ export class BlobTracker {
   private isPlaying = false;
   width = 0; height = 0;
   private liveParamsResolver: ((time: number) => TrackerParams) | null = null;
+  private isExporting = false;
   private proxyH = 0;
   private scaleX = 1; private scaleY = 1;
   private lastFrameTime = 0;
+  private gammaFuncR: SVGFEFuncRElement | null;
+  private gammaFuncG: SVGFEFuncGElement | null;
+  private gammaFuncB: SVGFEFuncBElement | null;
+  private tempMatrix: SVGFEColorMatrixElement | null;
 
   constructor(video: HTMLVideoElement, canvas: HTMLCanvasElement, params: TrackerParams) {
     this.video = video;
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
+    this.gammaFuncR = document.getElementById('bs-gamma-r') as SVGFEFuncRElement | null;
+    this.gammaFuncG = document.getElementById('bs-gamma-g') as SVGFEFuncGElement | null;
+    this.gammaFuncB = document.getElementById('bs-gamma-b') as SVGFEFuncBElement | null;
+    this.tempMatrix = document.getElementById('bs-temp-matrix') as SVGFEColorMatrixElement | null;
+    if (!this.gammaFuncR || !this.gammaFuncG || !this.gammaFuncB || !this.tempMatrix) {
+      console.warn('BlobTracker: color-grading SVG filter elements not found in DOM — gamma/temperature grading will be unavailable.');
+    }
     this.baseParams = params;
     this.params = params;
 
@@ -130,6 +142,16 @@ export class BlobTracker {
   public setLiveParamsResolver(fn: ((time: number) => TrackerParams) | null) {
     this.liveParamsResolver = fn;
     if (!fn) this.params = this.baseParams;
+  }
+
+  /**
+   * Marks whether the current frame is being captured for MP4 export.
+   * Used only to decide whether color grading applies (see `gradeExport`
+   * param) — export always uses the same canvas/resolution pipeline as
+   * preview regardless of this flag.
+   */
+  public setExporting(exporting: boolean) {
+    this.isExporting = exporting;
   }
 
   public resize(w?: number, h?: number, bypassCap = false) {
@@ -315,12 +337,53 @@ export class BlobTracker {
   // Scaling helper for resolution-independent detail (baseline 1280px)
   private getS() { return this.width / 1280; }
 
+  /**
+   * Composes the ctx.filter string for color grading (brightness/contrast/
+   * saturation via native CSS filter functions; hue/gamma/temperature are
+   * each omitted entirely when neutral, both as a small perf win and to
+   * avoid the SVG-filter linearRGB round-trip when it isn't needed).
+   * Gamma/temperature use the SVG filters defined in App.tsx's JSX,
+   * referenced by url(#id) and updated imperatively here so this stays in
+   * sync with per-frame keyframe-resolved params, not just React's render
+   * cycle. Visual only — never applied to the proxy canvas that motion
+   * detection reads.
+   */
+  private buildGradingFilter(): string {
+    const p = this.params;
+    const parts: string[] = [];
+    if (p.brightness !== 1) parts.push(`brightness(${p.brightness})`);
+    if (p.contrast !== 1) parts.push(`contrast(${p.contrast})`);
+    if (p.saturation !== 1) parts.push(`saturate(${p.saturation})`);
+    if (p.hue !== 0) parts.push(`hue-rotate(${p.hue}deg)`);
+    if (p.gamma !== 1 && this.gammaFuncR && this.gammaFuncG && this.gammaFuncB) {
+      const gammaExponent = String(1 / Math.max(0.01, p.gamma));
+      this.gammaFuncR.setAttribute('exponent', gammaExponent);
+      this.gammaFuncG.setAttribute('exponent', gammaExponent);
+      this.gammaFuncB.setAttribute('exponent', gammaExponent);
+      parts.push('url(#bs-gamma-filter)');
+    }
+    if (p.temperature !== 0 && this.tempMatrix) {
+      const k = 0.3;
+      const rGain = (1 + p.temperature * k).toFixed(3);
+      const bGain = (1 - p.temperature * k).toFixed(3);
+      this.tempMatrix.setAttribute('values', `${rGain} 0 0 0 0  0 1 0 0 0  0 0 ${bGain} 0 0  0 0 0 1 0`);
+      parts.push('url(#bs-temp-filter)');
+    }
+    return parts.join(' ');
+  }
+
   private drawVideoFrame() {
     this.ctx.imageSmoothingEnabled = true;
     this.ctx.imageSmoothingQuality = 'high';
 
+    // Mono modes (TRAIL_PATH/ASCII_BOX) intentionally force grayscale AFTER
+    // grading, so hue/saturation/temperature are flattened away in those
+    // modes by design — brightness/contrast/gamma still meaningfully affect
+    // the resulting mono look. This is deliberate, not a bug to "fix" later.
     const isMonoMode = (this.params.renderMode === 'TRAIL_PATH' || this.params.renderMode === 'ASCII_BOX');
-    this.ctx.filter = isMonoMode ? 'grayscale(100%) brightness(1.0) contrast(1.5)' : 'none';
+    const grading = (this.isExporting && !this.params.gradeExport) ? '' : this.buildGradingFilter();
+    const mono = isMonoMode ? 'grayscale(100%) brightness(1.0) contrast(1.5)' : '';
+    this.ctx.filter = [grading, mono].filter(Boolean).join(' ') || 'none';
     this.ctx.drawImage(this.video, 0, 0, this.width, this.height);
     this.ctx.filter = 'none';
 
