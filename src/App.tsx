@@ -496,6 +496,22 @@ export default function App() {
                   </div>
                 </Section>
 
+                <Section label="COLOR GRADE">
+                  <Row2>
+                    <BrutSlider label="BRIGHTNESS" value={displayParams.brightness} min={0} max={2} step={0.05} onChange={v => setDisplayParam('brightness', v)} />
+                    <BrutSlider label="CONTRAST" value={displayParams.contrast} min={0} max={2} step={0.05} onChange={v => setDisplayParam('contrast', v)} />
+                  </Row2>
+                  <Row2>
+                    <BrutSlider label="SATURATION" value={displayParams.saturation} min={0} max={2} step={0.05} onChange={v => setDisplayParam('saturation', v)} />
+                    <BrutSlider label="HUE" value={displayParams.hue} min={-180} max={180} step={1} onChange={v => setDisplayParam('hue', v)} />
+                  </Row2>
+                  <Row2>
+                    <BrutSlider label="GAMMA" value={displayParams.gamma} min={0.2} max={3} step={0.05} onChange={v => setDisplayParam('gamma', v)} />
+                    <BrutSlider label="TEMPERATURE" value={displayParams.temperature} min={-1} max={1} step={0.05} onChange={v => setDisplayParam('temperature', v)} />
+                  </Row2>
+                  <div className="toggle-row"><span>APPLY TO EXPORT</span><BrutToggle value={displayParams.gradeExport} onChange={v => setDisplayParam('gradeExport', v)} /></div>
+                </Section>
+
                 <Section label="LABELS">
                   <div className="toggle-row"><span>COORDINATES XY</span><BrutToggle value={displayParams.showCoordinates} onChange={v => setDisplayParam('showCoordinates', v)} /></div>
                   <div className="toggle-row"><span>BLOB ID</span><BrutToggle value={displayParams.showId} onChange={v => setDisplayParam('showId', v)} /></div>
@@ -614,8 +630,8 @@ function BrutSlider({ label, value, min, max, step, onChange, hint, invert }: {
   onChange: (v: string) => void; hint?: string; invert?: boolean;
 }) {
   const display = invert
-    ? (max + min - value).toFixed(step < 1 ? 1 : 0)
-    : typeof value === 'number' ? value.toFixed(step < 1 ? 1 : 0) : value;
+    ? (max + min - value).toFixed(step < 0.1 ? 2 : step < 1 ? 1 : 0)
+    : typeof value === 'number' ? value.toFixed(step < 0.1 ? 2 : step < 1 ? 1 : 0) : value;
   return (
     <div className="brut-slider" title={hint}>
       <div className="brut-slider-header">
