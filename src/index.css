@@ -317,6 +317,11 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   color: var(--text-mid);
 }
 
+.empty-hint.error-hint {
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
 /* ─── HINT TEXT ──────────────────────────────────────────────────────────────── */
 .hint-text {
   font-size: 9px;

@@ -54,6 +54,7 @@ const DEFAULT_PARAMS: TrackerParams = {
 
 export default function App() {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
   const [params, setParams] = useState<TrackerParams>(DEFAULT_PARAMS);
   const [showUI, setShowUI] = useState(true);
   const [isPaused, setIsPaused] = useState(true);
@@ -96,6 +97,7 @@ export default function App() {
     const vid = videoRef.current;
     const cv  = canvasRef.current;
     const onMeta  = () => {
+      setVideoError(null);
       if (vid.videoWidth && vid.videoHeight) {
         setExportRes({ w: vid.videoWidth, h: vid.videoHeight });
       }
@@ -120,12 +122,32 @@ export default function App() {
       if (vid.paused) trackerRef.current?.renderOnce();
     };
     const onLoadedData = () => { trackerRef.current?.renderOnce(); };
+    const onError = () => {
+      // The browser gives no detail beyond a MediaError code — most often
+      // this means the container/codec isn't one this browser can decode
+      // (e.g. HEVC or ProRes inside a .mov from an iPhone/camera), not a
+      // file-size limit. Surface something actionable instead of a silent
+      // blank canvas, and drop the failed source so the app returns to its
+      // normal "no video loaded" state rather than a half-initialized one.
+      const code = vid.error?.code;
+      const reason = code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
+        ? 'Unsupported format or codec (browsers typically only decode H.264/VP9/AV1 in MP4 or WebM — not HEVC or ProRes .mov files).'
+        : code === MediaError.MEDIA_ERR_DECODE
+        ? 'The browser started decoding but failed partway through — the file may be corrupt or use an unsupported codec profile.'
+        : 'The browser could not load this video.';
+      setVideoError(`Couldn't load video: ${reason}`);
+      trackerRef.current?.stop();
+      trackerRef.current = null;
+      URL.revokeObjectURL(vid.currentSrc);
+      setVideoSrc(null);
+    };
     vid.addEventListener('loadedmetadata', onMeta);
     vid.addEventListener('play',  onPlay);
     vid.addEventListener('pause', onPause);
     vid.addEventListener('timeupdate', onTime);
     vid.addEventListener('seeked', onSeeked);
     vid.addEventListener('loadeddata', onLoadedData);
+    vid.addEventListener('error', onError);
     return () => {
       vid.removeEventListener('loadedmetadata', onMeta);
       vid.removeEventListener('play',  onPlay);
@@ -133,6 +155,7 @@ export default function App() {
       vid.removeEventListener('timeupdate', onTime);
       vid.removeEventListener('seeked', onSeeked);
       vid.removeEventListener('loadeddata', onLoadedData);
+      vid.removeEventListener('error', onError);
     };
   }, [videoSrc]);
 
@@ -207,6 +230,8 @@ export default function App() {
 
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (!f) return;
+    if (videoSrc) URL.revokeObjectURL(videoSrc);
+    setVideoError(null);
     setVideoSrc(URL.createObjectURL(f));
     setIsPaused(true);
     setKeyframes([]);
@@ -601,11 +626,32 @@ export default function App() {
               </>
             )}
 
-            {!videoSrc && (
+            {videoError && (
+              <div className="empty-hint error-hint">
+                {videoError}<br />
+                Try re-exporting as MP4 (H.264) or WebM (VP9). There's no
+                enforced file-size limit, but very large files may still
+                fail or run slowly depending on your browser/hardware.
+              </div>
+            )}
+
+            {!videoSrc && !videoError && (
               <div className="empty-hint">
                 Load a video to start.<br />
                 Blobs track real motion regions.<br />
                 <kbd>CTRL+K</kbd> hides everything.
+                <div className="hint-text" style={{ marginTop: 10 }}>
+                  Performance (preview smoothness, export speed) depends on
+                  your device, browser, and screen resolution — heavier
+                  render modes and color grading cost more.
+                </div>
+                <div className="hint-text" style={{ marginTop: 6 }}>
+                  For best performance: use Chrome or Edge (fastest hardware
+                  video decode/encode), close other GPU-heavy tabs/apps,
+                  avoid battery-saver mode on laptops, pick a lower export
+                  resolution if it's slow, and keep color grading + heavy
+                  modes (GHOST_TRAIL, MESH_TRIANGULATE) off unless needed.
+                </div>
               </div>
             )}
           </motion.div>
