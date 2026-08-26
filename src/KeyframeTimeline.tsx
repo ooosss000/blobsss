@@ -11,13 +11,15 @@ interface KeyframeTimelineProps {
   onSelect: (id: string | null) => void;
   onDelete: (id: string) => void;
   onRetime: (id: string, time: number) => void;
+  onSeek: (time: number) => void;
 }
 
 export function KeyframeTimeline({
-  keyframes, selectedId, currentTime, duration, onSelect, onDelete, onRetime,
+  keyframes, selectedId, currentTime, duration, onSelect, onDelete, onRetime, onSeek,
 }: KeyframeTimelineProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [scrubbing, setScrubbing] = useState(false);
   const draggedRef = useRef(false);
 
   const pct = (t: number) => (duration > 0 ? (t / duration) * 100 : 0);
@@ -30,28 +32,40 @@ export function KeyframeTimeline({
     return frac * duration;
   };
 
-  const handlePointerDown = (id: string) => (e: React.PointerEvent) => {
+  const handleMarkerPointerDown = (id: string) => (e: React.PointerEvent) => {
     e.stopPropagation();
     setDraggingId(id);
     draggedRef.current = false;
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
   };
 
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!draggingId) return;
-    draggedRef.current = true;
-    const proposed = clientXToTime(e.clientX);
-    onRetime(draggingId, clampKeyframeTime(keyframes, draggingId, proposed, duration));
+  const handleTrackPointerDown = (e: React.PointerEvent) => {
+    // Only reaches here if no marker's own pointerdown already
+    // stopPropagation()'d — i.e. the user grabbed empty track, not a marker.
+    setScrubbing(true);
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    onSeek(clientXToTime(e.clientX));
   };
 
-  const handlePointerUp = () => setDraggingId(null);
-  const handlePointerCancel = () => setDraggingId(null);
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (draggingId) {
+      draggedRef.current = true;
+      const proposed = clientXToTime(e.clientX);
+      onRetime(draggingId, clampKeyframeTime(keyframes, draggingId, proposed, duration));
+    } else if (scrubbing) {
+      onSeek(clientXToTime(e.clientX));
+    }
+  };
+
+  const handlePointerUp = () => { setDraggingId(null); setScrubbing(false); };
+  const handlePointerCancel = () => { setDraggingId(null); setScrubbing(false); };
 
   return (
     <div className="kf-timeline">
       <div
         className="kf-track"
         ref={trackRef}
+        onPointerDown={handleTrackPointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
@@ -62,7 +76,7 @@ export function KeyframeTimeline({
             key={k.id}
             className={`kf-marker${k.id === selectedId ? ' selected' : ''}`}
             style={{ left: `${pct(k.time)}%` }}
-            onPointerDown={handlePointerDown(k.id)}
+            onPointerDown={handleMarkerPointerDown(k.id)}
             onLostPointerCapture={handlePointerUp}
             onClick={e => {
               e.stopPropagation();

@@ -221,6 +221,10 @@ export default function App() {
     if (videoRef.current) videoRef.current.currentTime = 0;
   };
 
+  const seekTo = (time: number) => {
+    if (videoRef.current) videoRef.current.currentTime = time;
+  };
+
   const addKeyframe = () => {
     const vid = videoRef.current;
     if (!vid) return;
@@ -543,6 +547,7 @@ export default function App() {
                     onSelect={setSelectedKeyframeId}
                     onDelete={deleteKeyframe}
                     onRetime={retimeKeyframe}
+                    onSeek={seekTo}
                   />
                   <button className="btn-brut flex-1 mt-8" onClick={addKeyframe}>
                     <Plus size={13} />

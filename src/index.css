@@ -398,7 +398,8 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   height: 28px;
   background: var(--panel-bg);
   border: 1px solid var(--border);
-  cursor: default;
+  cursor: pointer;
+  touch-action: none;
 }
 .kf-playhead {
   position: absolute;
