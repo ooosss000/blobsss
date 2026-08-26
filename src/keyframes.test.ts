@@ -17,7 +17,6 @@ const baseParams: TrackerParams = {
   hue: 0,
   gamma: 1,
   temperature: 0,
-  gradeExport: false,
   renderMode: 'BOX_INVERT',
   neighborLinks: 3,
   strokeColor: '#FFFFFF',
@@ -93,16 +92,12 @@ describe('resolveActiveParams', () => {
     expect(mid.diffThreshold).toBe(20);
   });
 
-  it('interpolates the new color-grading numeric fields and hard-switches gradeExport', () => {
-    const a = kf('a', 0, { brightness: 1, gamma: 1, temperature: 0, gradeExport: false });
-    const b = kf('b', 10, { brightness: 1.5, gamma: 2, temperature: 1, gradeExport: true });
-    const before = resolveActiveParams([a, b], 4, baseParams);
-    const after = resolveActiveParams([a, b], 6, baseParams);
+  it('interpolates the new color-grading numeric fields', () => {
+    const a = kf('a', 0, { brightness: 1, gamma: 1, temperature: 0 });
+    const b = kf('b', 10, { brightness: 1.5, gamma: 2, temperature: 1 });
     expect(resolveActiveParams([a, b], 5, baseParams).brightness).toBeCloseTo(1.25, 5);
     expect(resolveActiveParams([a, b], 5, baseParams).gamma).toBeCloseTo(1.5, 5);
     expect(resolveActiveParams([a, b], 5, baseParams).temperature).toBeCloseTo(0.5, 5);
-    expect(before.gradeExport).toBe(false);
-    expect(after.gradeExport).toBe(true);
   });
 });
 

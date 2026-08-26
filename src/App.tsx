@@ -36,7 +36,6 @@ const DEFAULT_PARAMS: TrackerParams = {
   hue: 0,
   gamma: 1,
   temperature: 0,
-  gradeExport: false,
   renderMode: 'BOX_INVERT',
   neighborLinks: 3,
   strokeColor: '#FFFFFF',
@@ -64,6 +63,7 @@ export default function App() {
   const [recTime, setRecTime] = useState(0);
   const [exportRes, setExportRes] = useState<{ w: number; h: number }>({ w: 1920, h: 1080 });
   const [isEncoding, setIsEncoding] = useState(false);
+  const [gradeExport, setGradeExport] = useState(true);
 
   // Keyframe state
   const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
@@ -101,6 +101,7 @@ export default function App() {
       setDuration(vid.duration || 0);
       trackerRef.current?.stop();
       trackerRef.current = new BlobTracker(vid, cv, paramsRef.current);
+      trackerRef.current.setGradeExport(gradeExport);
       if (keyframesRef.current.length > 0) {
         trackerRef.current.setLiveParamsResolver((t) => resolveActiveParams(keyframesRef.current, t, paramsRef.current));
       }
@@ -146,6 +147,8 @@ export default function App() {
   useLayoutEffect(() => { if (!isRecording) trackerRef.current?.resize(); }, [isRecording]);
 
   useEffect(() => { trackerRef.current?.updateParams(params); }, [params]);
+
+  useEffect(() => { trackerRef.current?.setGradeExport(gradeExport); }, [gradeExport]);
 
   // Keep selection valid only when it dangles (points at a deleted keyframe);
   // never override an intentional deselect (selectedKeyframeId === null)
@@ -274,71 +277,79 @@ export default function App() {
     tracker.setExporting(true);
     tracker.resize(exportRes.w, exportRes.h, true);
 
-    const { Muxer, ArrayBufferTarget } = await import('mp4-muxer');
+    try {
+      const { Muxer, ArrayBufferTarget } = await import('mp4-muxer');
 
-    const target = new ArrayBufferTarget();
-    const muxer = new Muxer({
-      target,
-      video: {
-        codec: 'avc',
+      const target = new ArrayBufferTarget();
+      const muxer = new Muxer({
+        target,
+        video: {
+          codec: 'avc',
+          width: exportRes.w,
+          height: exportRes.h,
+        },
+        fastStart: 'in-memory',
+      });
+      muxerRef.current = { muxer, target };
+
+      const encoder = new VideoEncoder({
+        output: (chunk, meta) => {
+          muxer.addVideoChunk(chunk, meta);
+        },
+        error: (e) => console.error('VideoEncoder error:', e),
+      });
+
+      encoder.configure({
+        codec: 'avc1.640034', // H.264 High Profile Level 5.2 (supports up to 4K+)
         width: exportRes.w,
         height: exportRes.h,
-      },
-      fastStart: 'in-memory',
-    });
-    muxerRef.current = { muxer, target };
+        bitrate: 30_000_000, // 30 Mbps for maximum output quality
+        framerate: 30,
+      });
 
-    const encoder = new VideoEncoder({
-      output: (chunk, meta) => {
-        muxer.addVideoChunk(chunk, meta);
-      },
-      error: (e) => console.error('VideoEncoder error:', e),
-    });
+      encoderRef.current = encoder;
+      frameCountRef.current = 0;
 
-    encoder.configure({
-      codec: 'avc1.640034', // H.264 High Profile Level 5.2 (supports up to 4K+)
-      width: exportRes.w,
-      height: exportRes.h,
-      bitrate: 30_000_000, // 30 Mbps for maximum output quality
-      framerate: 30,
-    });
+      setIsRecording(true);
+      setRecTime(0);
+      timerRef.current = setInterval(() => setRecTime(t => t + 1), 1000);
 
-    encoderRef.current = encoder;
-    frameCountRef.current = 0;
+      // Frame capture loop — throttled to actual 30fps with backpressure
+      let lastCaptureTime = 0;
+      const captureInterval = 1000 / 30; // 33.3ms
 
-    setIsRecording(true);
-    setRecTime(0);
-    timerRef.current = setInterval(() => setRecTime(t => t + 1), 1000);
+      const captureFrame = () => {
+        if (!encoderRef.current || encoderRef.current.state === 'closed') return;
 
-    // Frame capture loop — throttled to actual 30fps with backpressure
-    let lastCaptureTime = 0;
-    const captureInterval = 1000 / 30; // 33.3ms
+        recordingLoopRef.current = requestAnimationFrame(captureFrame);
 
-    const captureFrame = () => {
-      if (!encoderRef.current || encoderRef.current.state === 'closed') return;
+        // Throttle to 30fps
+        const now = performance.now();
+        if (now - lastCaptureTime < captureInterval) return;
+        lastCaptureTime = now;
+
+        // Skip if encoder is backlogged (prevent frame pile-up)
+        if (encoderRef.current.encodeQueueSize > 5) return;
+
+        const frame = new VideoFrame(cv, {
+          timestamp: frameCountRef.current * (1_000_000 / 30), // microseconds
+        });
+
+        encoderRef.current.encode(frame, {
+          keyFrame: frameCountRef.current % 60 === 0, // keyframe every 2s
+        });
+        frame.close();
+        frameCountRef.current++;
+      };
 
       recordingLoopRef.current = requestAnimationFrame(captureFrame);
-
-      // Throttle to 30fps
-      const now = performance.now();
-      if (now - lastCaptureTime < captureInterval) return;
-      lastCaptureTime = now;
-
-      // Skip if encoder is backlogged (prevent frame pile-up)
-      if (encoderRef.current.encodeQueueSize > 5) return;
-
-      const frame = new VideoFrame(cv, {
-        timestamp: frameCountRef.current * (1_000_000 / 30), // microseconds
-      });
-
-      encoderRef.current.encode(frame, {
-        keyFrame: frameCountRef.current % 60 === 0, // keyframe every 2s
-      });
-      frame.close();
-      frameCountRef.current++;
-    };
-
-    recordingLoopRef.current = requestAnimationFrame(captureFrame);
+    } catch (err) {
+      console.error('Failed to start recording:', err);
+      tracker.setExporting(false);
+      tracker.resize();
+      encoderRef.current = null;
+      muxerRef.current = null;
+    }
   }, [exportRes]);
 
   const stopRecording = useCallback(async () => {
@@ -509,7 +520,7 @@ export default function App() {
                     <BrutSlider label="GAMMA" value={displayParams.gamma} min={0.2} max={3} step={0.05} onChange={v => setDisplayParam('gamma', v)} />
                     <BrutSlider label="TEMPERATURE" value={displayParams.temperature} min={-1} max={1} step={0.05} onChange={v => setDisplayParam('temperature', v)} />
                   </Row2>
-                  <div className="toggle-row"><span>APPLY TO EXPORT</span><BrutToggle value={displayParams.gradeExport} onChange={v => setDisplayParam('gradeExport', v)} /></div>
+                  <div className="toggle-row"><span>APPLY GRADE TO MP4</span><BrutToggle value={gradeExport} onChange={setGradeExport} /></div>
                 </Section>
 
                 <Section label="LABELS">

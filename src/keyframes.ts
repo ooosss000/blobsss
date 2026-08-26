@@ -18,7 +18,7 @@ const COLOR_KEYS = ['strokeColor', 'textColor'] as const satisfies readonly (key
 
 const DISCRETE_KEYS = [
   'subdivide', 'renderMode', 'neighborLinks', 'fontFamily',
-  'showCoordinates', 'showId', 'showSize', 'showLabelBG', 'gradeExport',
+  'showCoordinates', 'showId', 'showSize', 'showLabelBG',
 ] as const satisfies readonly (keyof TrackerParams)[];
 
 type _UncategorizedParamKeys = Exclude<

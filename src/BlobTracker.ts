@@ -63,7 +63,6 @@ export interface TrackerParams {
   hue: number;             // CSS hue-rotate() degrees, 0 = neutral
   gamma: number;           // SVG feComponentTransfer gamma, 1 = neutral (exponent = 1/gamma)
   temperature: number;     // warm(+)/cool(-) R/B channel shift via SVG feColorMatrix, 0 = neutral
-  gradeExport: boolean;    // if false, MP4 export ignores grading regardless of preview
   // Visual
   renderMode: RenderMode;
   neighborLinks: number;
@@ -100,6 +99,7 @@ export class BlobTracker {
   width = 0; height = 0;
   private liveParamsResolver: ((time: number) => TrackerParams) | null = null;
   private isExporting = false;
+  private gradeExport = true;
   private proxyH = 0;
   private scaleX = 1; private scaleY = 1;
   private lastFrameTime = 0;
@@ -147,11 +147,22 @@ export class BlobTracker {
   /**
    * Marks whether the current frame is being captured for MP4 export.
    * Used only to decide whether color grading applies (see `gradeExport`
-   * param) — export always uses the same canvas/resolution pipeline as
+   * field) — export always uses the same canvas/resolution pipeline as
    * preview regardless of this flag.
    */
   public setExporting(exporting: boolean) {
     this.isExporting = exporting;
+  }
+
+  /**
+   * Session-wide policy: whether MP4 export should bake in color grading
+   * or ignore it. Deliberately NOT a TrackerParams field — this is an
+   * export policy, not a per-frame visual property, so it must not be
+   * keyframable (a keyframed value would hard-switch mid-export at
+   * whichever keyframe is selected, not describe global export behavior).
+   */
+  public setGradeExport(gradeExport: boolean) {
+    this.gradeExport = gradeExport;
   }
 
   public resize(w?: number, h?: number, bypassCap = false) {
@@ -381,7 +392,7 @@ export class BlobTracker {
     // modes by design — brightness/contrast/gamma still meaningfully affect
     // the resulting mono look. This is deliberate, not a bug to "fix" later.
     const isMonoMode = (this.params.renderMode === 'TRAIL_PATH' || this.params.renderMode === 'ASCII_BOX');
-    const grading = (this.isExporting && !this.params.gradeExport) ? '' : this.buildGradingFilter();
+    const grading = (this.isExporting && !this.gradeExport) ? '' : this.buildGradingFilter();
     const mono = isMonoMode ? 'grayscale(100%) brightness(1.0) contrast(1.5)' : '';
     this.ctx.filter = [grading, mono].filter(Boolean).join(' ') || 'none';
     this.ctx.drawImage(this.video, 0, 0, this.width, this.height);
