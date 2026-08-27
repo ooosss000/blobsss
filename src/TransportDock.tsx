@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Play, Pause, RotateCcw, ChevronLeft, ChevronRight, Plus, X, GripVertical } from 'lucide-react';
 import type { Keyframe } from './keyframes';
-import { VideoScrubBar } from './VideoScrubBar';
-import { KeyframeBar } from './KeyframeBar';
+import { TimelineBar } from './TimelineBar';
 
 interface TransportDockProps {
   isPaused: boolean;
@@ -30,8 +29,8 @@ interface TransportDockProps {
    */
   pos: { x: number; y: number } | null;
   onPosChange: (pos: { x: number; y: number } | null) => void;
-  /** Whether the sidebar panel is currently shown — used to keep the dock from being dragged underneath it (see clampToViewport). */
-  showUI: boolean;
+  /** Hides the dock — Ctrl+L, separate from Ctrl+K which hides the sidebar. Also reachable by clicking the label this renders, mirroring the sidebar's "⌃K HIDE" text. */
+  onHide: () => void;
 }
 
 // Mirrors App.tsx's own fmtTime — kept as a small local copy rather than a
@@ -40,13 +39,6 @@ interface TransportDockProps {
 const fmtTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
 const JUMP_EPS = 0.01;
-
-// The sidebar panel's own CSS width (src/index.css, .panel) — used as a
-// fallback if the panel element can't be measured directly (e.g. it hasn't
-// painted yet). Kept in sync manually since there's no shared source of
-// truth between CSS and JS here; if .panel's width ever changes, update
-// this too.
-const PANEL_WIDTH_FALLBACK = 320;
 
 // M:SS.mmm — millisecond precision for the editable timecode readout,
 // distinct from fmtTime's coarser M:SS (used for the status line, where
@@ -131,7 +123,7 @@ function TimecodeDisplay({ time, duration, onSeek, disabled }: TimecodeDisplayPr
 export function TransportDock({
   isPaused, onTogglePlay, onRestart, currentTime, duration, onSeek,
   keyframes, selectedId, onSelect, onDelete, onRetime, onAddKeyframe, disabled,
-  pos, onPosChange, showUI,
+  pos, onPosChange, onHide,
 }: TransportDockProps) {
   const dockRef = useRef<HTMLDivElement>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
@@ -142,30 +134,21 @@ export function TransportDock({
   // browser window is narrowed) — re-clamps against the dock's current
   // measured size, not a stale one from drag-start time.
   //
-  // Also keeps the dock from being dragged underneath the sidebar panel
-  // when it's visible: the panel is a fixed-width, opaque, higher-z-index
-  // column pinned to the left edge, sharing no visibility state with the
-  // dock (dockVisible only ever hides the dock IN ADDITION TO showUI,
-  // never independent of it) — so once dragged behind it, the dock has no
-  // exposed area left to grab on a narrow viewport, with no in-app way to
-  // recover short of a full reload (which also discards the loaded video).
-  // Measuring the real element (rather than trusting a hardcoded width)
-  // stays correct even if .panel's own CSS width is changed later.
+  // Deliberately just clamps to the viewport, with no special-casing for
+  // the sidebar panel: the dock's z-index is now above .panel's (see
+  // index.css), so dragging it under the panel is harmless — it renders
+  // on top and stays fully reachable. (An earlier version clamped against
+  // the panel's width too, to work around the dock being unreachable when
+  // the panel had the higher z-index; once that ordering was fixed
+  // directly, the workaround here was no longer needed.)
   const clampToViewport = useCallback((x: number, y: number) => {
     const el = dockRef.current;
     const w = el?.offsetWidth ?? 0;
     const h = el?.offsetHeight ?? 0;
     const maxX = Math.max(0, window.innerWidth - w);
     const maxY = Math.max(0, window.innerHeight - h);
-    const panelWidth = showUI
-      ? (document.querySelector('.panel')?.getBoundingClientRect().width ?? PANEL_WIDTH_FALLBACK)
-      : 0;
-    // If the viewport is too narrow to avoid the panel at all, fall back to
-    // the plain viewport clamp rather than producing an inverted [min, max]
-    // range — the dock ends up as far right as geometrically possible.
-    const minX = Math.min(panelWidth, maxX);
-    return { x: Math.min(Math.max(minX, x), maxX), y: Math.min(Math.max(0, y), maxY) };
-  }, [showUI]);
+    return { x: Math.min(Math.max(0, x), maxX), y: Math.min(Math.max(0, y), maxY) };
+  }, []);
 
   useEffect(() => {
     const onResize = () => { if (pos) onPosChange(clampToViewport(pos.x, pos.y)); };
@@ -217,84 +200,73 @@ export function TransportDock({
       className="transport-dock"
       style={pos ? { left: pos.x, top: pos.y, bottom: 'auto', transform: 'none' } : undefined}
     >
-      <div
-        className="dock-grip"
-        onPointerDown={handleGripPointerDown}
-        onPointerMove={handleGripPointerMove}
-        onPointerUp={handleGripPointerUp}
-        onPointerCancel={handleGripPointerUp}
-        onLostPointerCapture={handleGripPointerUp}
-        title="Drag to move"
-      >
-        <GripVertical size={14} />
+      <div className="dock-top-row">
+        <div
+          className="dock-grip"
+          onPointerDown={handleGripPointerDown}
+          onPointerMove={handleGripPointerMove}
+          onPointerUp={handleGripPointerUp}
+          onPointerCancel={handleGripPointerUp}
+          onLostPointerCapture={handleGripPointerUp}
+          title="Drag to move"
+        >
+          <GripVertical size={14} />
+        </div>
+        <span className="dock-hide-btn" onClick={onHide} title="Hide dock (Ctrl+L)">⌃L HIDE</span>
       </div>
 
       <div className="dock-row">
-        <div className="dock-lead">
-          <button className="btn-brut icon-btn" onClick={onTogglePlay} disabled={disabled}>
-            {isPaused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
-          </button>
-          <button className="btn-brut icon-btn" onClick={onRestart} disabled={disabled} title="Restart">
-            <RotateCcw size={14} />
-          </button>
-        </div>
-        <VideoScrubBar currentTime={currentTime} duration={duration} onSeek={onSeek} disabled={disabled} />
-        <div className="dock-trail">
-          <TimecodeDisplay time={currentTime} duration={duration} onSeek={onSeek} disabled={disabled} />
-        </div>
-      </div>
-      <div className="dock-caption">DRAG TO SEEK</div>
-
-      <div className="dock-row">
-        <div className="dock-lead">
-          <button
-            className="btn-brut icon-btn"
-            onClick={() => prevKf && jumpTo(prevKf)}
-            disabled={disabled || !prevKf}
-            title="Jump to previous keyframe"
-          >
-            <ChevronLeft size={14} />
-          </button>
-        </div>
-        <KeyframeBar
-          keyframes={keyframes}
-          selectedId={selectedId}
+        <button className="btn-brut icon-btn" onClick={onTogglePlay} disabled={disabled}>
+          {isPaused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
+        </button>
+        <button className="btn-brut icon-btn" onClick={onRestart} disabled={disabled} title="Restart">
+          <RotateCcw size={14} />
+        </button>
+        <button
+          className="btn-brut icon-btn"
+          onClick={() => prevKf && jumpTo(prevKf)}
+          disabled={disabled || !prevKf}
+          title="Jump to previous keyframe"
+        >
+          <ChevronLeft size={14} />
+        </button>
+        <TimelineBar
           currentTime={currentTime}
           duration={duration}
+          onSeek={onSeek}
+          keyframes={keyframes}
+          selectedId={selectedId}
           onSelect={onSelect}
           onRetime={onRetime}
           onAddKeyframeAt={addKeyframeAt}
           disabled={disabled}
         />
-        <div className="dock-trail">
-          <button
-            className="btn-brut icon-btn"
-            onClick={() => nextKf && jumpTo(nextKf)}
-            disabled={disabled || !nextKf}
-            title="Jump to next keyframe"
-          >
-            <ChevronRight size={14} />
-          </button>
-          <button className="btn-brut icon-btn" onClick={onAddKeyframe} disabled={disabled} title="Add keyframe">
-            <Plus size={14} />
-          </button>
-          {/* Always rendered (rather than conditional on selectedId) so this
-              row's trailing zone stays a constant width — a width that
-              changes when a keyframe gets selected/deselected would shift
-              the track's right edge and break its alignment with the scrub
-              row's track above, even after the .dock-lead/.dock-trail fix. */}
-          <button
-            className="btn-brut icon-btn"
-            onClick={() => selectedId && onDelete(selectedId)}
-            disabled={disabled || !selectedId}
-            title="Delete keyframe"
-            style={{ visibility: selectedId ? 'visible' : 'hidden' }}
-          >
-            <X size={14} />
-          </button>
-        </div>
+        <button
+          className="btn-brut icon-btn"
+          onClick={() => nextKf && jumpTo(nextKf)}
+          disabled={disabled || !nextKf}
+          title="Jump to next keyframe"
+        >
+          <ChevronRight size={14} />
+        </button>
+        <button className="btn-brut icon-btn" onClick={onAddKeyframe} disabled={disabled} title="Add keyframe">
+          <Plus size={14} />
+        </button>
+        {/* Always rendered (visibility toggled, not conditionally unmounted)
+            so selecting/deselecting a keyframe doesn't shift the row's
+            width and jump the track next to it. */}
+        <button
+          className="btn-brut icon-btn"
+          onClick={() => selectedId && onDelete(selectedId)}
+          disabled={disabled || !selectedId}
+          title="Delete keyframe"
+          style={{ visibility: selectedId ? 'visible' : 'hidden' }}
+        >
+          <X size={14} />
+        </button>
+        <TimecodeDisplay time={currentTime} duration={duration} onSeek={onSeek} disabled={disabled} />
       </div>
-      <div className="dock-caption">CLICK MARKER TO SELECT · DRAG TO RETIME</div>
+      <div className="dock-caption">DRAG TO SEEK · DOUBLE-CLICK OR + TO ADD KEYFRAME · DRAG DIAMOND TO RETIME</div>
 
       <div className="dock-status">{statusText}</div>
     </div>

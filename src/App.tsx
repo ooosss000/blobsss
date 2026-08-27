@@ -92,6 +92,10 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); setShowUI(p => !p); }
+      // Separate from Ctrl+K: hides just the transport dock (scrub/keyframe
+      // bars), leaving the sidebar visible — independent toggle, same as
+      // the "SHOW TRANSPORT DOCK" checkbox in the KEYFRAMES section.
+      if ((e.ctrlKey || e.metaKey) && e.key === 'l') { e.preventDefault(); setDockVisible(p => !p); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -476,7 +480,7 @@ export default function App() {
           disabled={isRecording || isEncoding}
           pos={dockPos}
           onPosChange={setDockPos}
-          showUI={showUI}
+          onHide={() => setDockVisible(false)}
         />
       )}
 
@@ -491,7 +495,7 @@ export default function App() {
           >
             <div className="panel-header">
               <span className="panel-title">BLOBSSS</span>
-              <span className="panel-ver">⌃K HIDE</span>
+              <span className="panel-ver panel-hide-btn" onClick={() => setShowUI(false)} title="Hide UI (Ctrl+K)">⌃K HIDE</span>
             </div>
 
             <Section label="SOURCE">

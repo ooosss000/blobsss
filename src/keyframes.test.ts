@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveActiveParams, clampExportPreviewSize, clampKeyframeTime, NUMERIC_KEYS, type Keyframe } from './keyframes';
+import { resolveActiveParams, clampExportPreviewSize, clampKeyframeTime, type Keyframe } from './keyframes';
 import type { TrackerParams } from './BlobTracker';
 
 const baseParams: TrackerParams = {
@@ -59,59 +59,49 @@ describe('resolveActiveParams', () => {
     expect(resolveActiveParams([a, b], 100, baseParams).diffThreshold).toBe(20);
   });
 
-  it('linearly interpolates numeric params between two keyframes', () => {
+  it('holds a numeric param at its keyframe value for the whole span, not a blend', () => {
     const a = kf('a', 0, { diffThreshold: 10, fontSize: 10 });
     const b = kf('b', 10, { diffThreshold: 30, fontSize: 20 });
     const mid = resolveActiveParams([a, b], 5, baseParams);
-    expect(mid.diffThreshold).toBe(20);
-    expect(mid.fontSize).toBe(15);
+    expect(mid.diffThreshold).toBe(10);
+    expect(mid.fontSize).toBe(10);
   });
 
-  it('interpolates colors channel-wise', () => {
+  it('holds a color param at its keyframe value, not a channel-wise blend', () => {
     const a = kf('a', 0, { strokeColor: '#000000' });
     const b = kf('b', 10, { strokeColor: '#FFFFFF' });
     const mid = resolveActiveParams([a, b], 5, baseParams);
-    expect(mid.strokeColor).toBe('#808080');
+    expect(mid.strokeColor).toBe('#000000');
   });
 
-  it('hard-switches discrete params at the midpoint', () => {
-    const a = kf('a', 0, { renderMode: 'BOX_INVERT', showId: true });
-    const b = kf('b', 10, { renderMode: 'GHOST_TRAIL', showId: false });
-    const before = resolveActiveParams([a, b], 4, baseParams);
-    const after = resolveActiveParams([a, b], 6, baseParams);
-    expect(before.renderMode).toBe('BOX_INVERT');
-    expect(before.showId).toBe(true);
-    expect(after.renderMode).toBe('GHOST_TRAIL');
-    expect(after.showId).toBe(false);
+  it('switches every param exactly at the next keyframe\'s time, not before', () => {
+    const a = kf('a', 0, { renderMode: 'BOX_INVERT', showId: true, diffThreshold: 10 });
+    const b = kf('b', 10, { renderMode: 'GHOST_TRAIL', showId: false, diffThreshold: 30 });
+    const justBefore = resolveActiveParams([a, b], 9.999, baseParams);
+    const atExactly = resolveActiveParams([a, b], 10, baseParams);
+    expect(justBefore.renderMode).toBe('BOX_INVERT');
+    expect(justBefore.showId).toBe(true);
+    expect(justBefore.diffThreshold).toBe(10);
+    expect(atExactly.renderMode).toBe('GHOST_TRAIL');
+    expect(atExactly.showId).toBe(false);
+    expect(atExactly.diffThreshold).toBe(30);
   });
 
   it('sorts out-of-order keyframes by time before resolving', () => {
     const b = kf('b', 10, { diffThreshold: 30 });
     const a = kf('a', 0, { diffThreshold: 10 });
     const mid = resolveActiveParams([b, a], 5, baseParams);
-    expect(mid.diffThreshold).toBe(20);
+    expect(mid.diffThreshold).toBe(10);
   });
 
-  it.each(NUMERIC_KEYS)('interpolates %s linearly between two keyframes', (key) => {
-    const a = kf('a', 0, { [key]: 0 } as Partial<TrackerParams>);
-    const b = kf('b', 10, { [key]: 10 } as Partial<TrackerParams>);
-    const mid = resolveActiveParams([a, b], 5, baseParams);
-    expect(mid[key]).toBeCloseTo(5, 5);
-  });
-
-  it('keeps every color-grading field categorized as numeric', () => {
-    // it.each(NUMERIC_KEYS) above only ever tests whatever IS in the array —
-    // if a key silently moves to the wrong array (e.g. DISCRETE_KEYS), tsc's
-    // exhaustiveness guard stays clean (the key is still categorized
-    // *somewhere*) and it.each just generates one fewer test case, with
-    // nothing failing. This test pins each grading key by name so a
-    // miscategorization produces an explicit failure instead of a silently
-    // shrinking test count.
-    const expectedNumericGradingKeys: (keyof TrackerParams)[] =
-      ['brightness', 'contrast', 'saturation', 'hue', 'gamma', 'temperature'];
-    for (const key of expectedNumericGradingKeys) {
-      expect(NUMERIC_KEYS).toContain(key);
-    }
+  it('holds the most recent of three or more keyframes', () => {
+    const a = kf('a', 0, { diffThreshold: 10 });
+    const b = kf('b', 5, { diffThreshold: 20 });
+    const c = kf('c', 10, { diffThreshold: 30 });
+    expect(resolveActiveParams([a, b, c], 2, baseParams).diffThreshold).toBe(10);
+    expect(resolveActiveParams([a, b, c], 5, baseParams).diffThreshold).toBe(20);
+    expect(resolveActiveParams([a, b, c], 7, baseParams).diffThreshold).toBe(20);
+    expect(resolveActiveParams([a, b, c], 10, baseParams).diffThreshold).toBe(30);
   });
 });
 

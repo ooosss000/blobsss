@@ -108,6 +108,8 @@ body {
   color: var(--text-lo);
   letter-spacing: 0.08em;
 }
+.panel-hide-btn { cursor: pointer; transition: color 0.1s; }
+.panel-hide-btn:hover { color: var(--text-hi); }
 
 /* ─── SHORTCUT HINT ─────────────────────────────────────────────────────── */
 .shortcut-hint {
@@ -387,8 +389,13 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  z-index: 40;
+  gap: 6px;
+  /* Above .panel's z-index:50 — at narrower viewports the dock's default
+     centered position can fall under the sidebar's 320px-wide column, and
+     it should render over the panel there rather than being hidden behind
+     it (its own semi-opaque background already reads fine layered on top
+     of the panel, same as any floating HUD/toolbar). */
+  z-index: 60;
   /* Scales with the viewport instead of stopping at a small fixed cap —
      on a wide screen the old 640px max made the actual draggable track
      width stay small regardless of how much room there was, which is
@@ -396,7 +403,11 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   width: min(1100px, calc(100vw - 32px));
   background: rgba(0, 0, 0, 0.72);
   border: 1px solid var(--text-hi);
-  padding: 7px;
+  padding: 6px;
+  /* Smooths out resizing (window resize crossing the narrow-viewport
+     breakpoint, or the clamp()-driven track height changing) instead of
+     snapping between sizes on every layout recalculation. */
+  transition: width 0.15s ease, padding 0.15s ease;
   /* A thin ruler-style track (like Premiere/most NLE timelines), not a
      tall clickable rectangle. Precision comes from a thicker, brighter
      playhead line (see .kf-playhead) rather than from a big track hit
@@ -404,38 +415,17 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
      clickable even at this track's small height. Every dependent
      dimension still derives from this via calc()/max() so they scale
      smoothly with viewport width without extra breakpoints. */
-  --track-h: clamp(20px, 2.2vw, 28px);
-  /* Shared by .dock-lead/.dock-trail below so the scrub row's track and the
-     keyframe row's track start/end at the exact same x position, even
-     though the two rows have a different number of buttons around their
-     track (2 leading buttons in the scrub row vs. 1 in the keyframe row;
-     up to 3 trailing buttons in the keyframe row vs. a time readout in the
-     scrub row). Without this, a given time percentage renders at a
-     different absolute pixel position in each row — the playhead/keyframe
-     markers visibly don't line up between the two stacked tracks. */
-  --icon-w: 34px;
-  --dock-gap: 6px;
+  --track-h: clamp(16px, 1.8vw, 22px);
+  --icon-w: 30px;
+  --dock-gap: 5px;
 }
-.dock-lead {
-  width: calc(var(--icon-w) * 2 + var(--dock-gap));
-  display: flex;
-  gap: var(--dock-gap);
-  justify-content: flex-end;
-  flex-shrink: 0;
-}
-.dock-trail {
-  width: calc(var(--icon-w) * 3 + var(--dock-gap) * 2);
-  display: flex;
-  align-items: center;
-  gap: var(--dock-gap);
-  flex-shrink: 0;
-}
+.dock-top-row { display: flex; align-items: center; margin: -2px 0 2px; }
 .dock-grip {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   height: 14px;
-  margin: -2px 0 2px;
   color: var(--text-mid);
   cursor: grab;
   touch-action: none;
@@ -443,6 +433,14 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
 }
 .dock-grip:hover { color: var(--text-hi); }
 .dock-grip:active { cursor: grabbing; color: var(--text-hi); }
+.dock-hide-btn {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--text-lo);
+  cursor: pointer;
+  transition: color 0.1s;
+}
+.dock-hide-btn:hover { color: var(--text-hi); }
 .dock-caption {
   font-size: 9px;
   letter-spacing: 0.06em;
@@ -455,7 +453,7 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
 .dock-row .icon-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); border-color: var(--text-hi); }
 .dock-row .icon-btn:active { background: var(--text-hi); color: #000; }
 .dock-time {
-  flex: 1;
+  flex-shrink: 0;
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-mid);
@@ -465,9 +463,8 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
 }
 .dock-time:hover { color: var(--text-hi); }
 .dock-timecode-input {
-  flex: 1;
-  width: 100%;
-  min-width: 0;
+  flex-shrink: 0;
+  width: 130px;
   font-family: var(--font-mono);
   font-size: 12px;
   letter-spacing: 0.04em;
@@ -493,22 +490,24 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
 @media (max-width: 560px) {
   .transport-dock {
     width: calc(100vw - 16px);
-    padding: 6px;
-    gap: 5px;
-    --icon-w: 28px;
-    --dock-gap: 5px;
+    padding: 5px;
+    gap: 4px;
+    --icon-w: 26px;
+    --dock-gap: 4px;
   }
   .dock-time { font-size: 11px; }
-  .scrub-track, .kf-track { min-width: 80px; }
+  .kf-track { min-width: 80px; }
 }
 
-/* ─── SCRUB / KEYFRAME TRACKS ───────────────────────────────────────────── */
-.scrub-track, .kf-track {
+/* ─── TIMELINE TRACK (scrub + keyframes combined) ──────────────────────── */
+.kf-track {
   position: relative;
   flex: 1;
   min-width: 120px;
   height: var(--track-h);
+  transition: height 0.15s ease;
   touch-action: none;
+  cursor: pointer;
   /* Contains .kf-marker::before's enlarged hit-target at the track edges —
      without this, a keyframe near time≈0 or time≈duration bleeds into the
      adjacent nav/add buttons in .dock-row (only 8px gap), since an
@@ -519,12 +518,10 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   overflow: hidden;
   user-select: none;
 }
-/* The scrub bar keeps a filled box (it's a distinct draggable control), but
-   the keyframe track is deliberately NOT a filled rectangle — Premiere and
-   most NLEs render a keyframe lane as a thin baseline line with diamonds
-   sitting on it, not a boxed track. The line lives on .kf-track itself
-   (::before) so it's always present even with zero keyframes. */
-.scrub-track { background: var(--panel-bg); border: 1px solid var(--border); }
+/* No filled background rectangle — Premiere and most NLEs render a
+   timeline/keyframe lane as a thin baseline line with markers sitting on
+   it, not a boxed track. The line is always present, even with zero
+   keyframes, since it also represents "the timeline" for scrubbing. */
 .kf-track::before {
   content: '';
   position: absolute;
@@ -533,12 +530,7 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   background: var(--border);
   transform: translateY(-50%);
 }
-/* .scrub-track is click-to-seek everywhere; .kf-track is only interactive
-   on its markers (see .kf-marker below) — a pointer cursor over its empty
-   space would advertise a click affordance that isn't there. */
-.scrub-track { cursor: pointer; }
-.kf-track { cursor: default; }
-.scrub-track.disabled, .kf-track.disabled {
+.kf-track.disabled {
   pointer-events: none;
   opacity: 0.5;
   cursor: not-allowed;
