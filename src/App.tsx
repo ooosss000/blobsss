@@ -56,11 +56,13 @@ export default function App() {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
   const [params, setParams] = useState<TrackerParams>(DEFAULT_PARAMS);
+  // Deliberately independent: Ctrl+K (showUI) hides only the sidebar
+  // panel; the dock has its own visibility (dockVisible, Ctrl+L) so it
+  // stays usable while the sidebar is tucked away.
   const [showUI, setShowUI] = useState(true);
   const [dockVisible, setDockVisible] = useState(true);
   // Lifted out of TransportDock so a dragged position survives the dock
-  // being hidden/re-shown via either showUI (Ctrl+K) or dockVisible —
-  // both unmount TransportDock rather than just CSS-hiding it, which would
+  // being hidden/re-shown via dockVisible — unmounting TransportDock would
   // otherwise reset a dock-local position back to default on every re-show.
   const [dockPos, setDockPos] = useState<{ x: number; y: number } | null>(null);
   const [isPaused, setIsPaused] = useState(true);
@@ -463,7 +465,7 @@ export default function App() {
         style={previewSize ? { width: previewSize.w, height: previewSize.h } : undefined}
         onClick={togglePlay}
       />
-      {videoSrc && showUI && dockVisible && (
+      {videoSrc && dockVisible && (
         <TransportDock
           isPaused={isPaused}
           onTogglePlay={togglePlay}
@@ -481,6 +483,7 @@ export default function App() {
           pos={dockPos}
           onPosChange={setDockPos}
           onHide={() => setDockVisible(false)}
+          showUI={showUI}
         />
       )}
 

@@ -21,16 +21,18 @@ interface TransportDockProps {
    * null = use the default CSS position (bottom-center); otherwise explicit
    * viewport-relative coordinates. Lifted to the parent (rather than local
    * state) so a dragged position survives the dock being hidden and
-   * re-shown via either the Ctrl+K (`showUI`) or "SHOW TRANSPORT DOCK"
-   * toggle — both unmount this component rather than just hiding it via
-   * CSS, which would otherwise silently reset local state back to null on
-   * every re-show. Still resets to null on an actual page reload, since
-   * the parent's own state isn't persisted either.
+   * re-shown via the "SHOW TRANSPORT DOCK" toggle/Ctrl+L, which unmounts
+   * this component rather than just hiding it via CSS — that would
+   * otherwise silently reset local state back to null on every re-show.
+   * Still resets to null on an actual page reload, since the parent's own
+   * state isn't persisted either.
    */
   pos: { x: number; y: number } | null;
   onPosChange: (pos: { x: number; y: number } | null) => void;
   /** Hides the dock — Ctrl+L, separate from Ctrl+K which hides the sidebar. Also reachable by clicking the label this renders, mirroring the sidebar's "⌃K HIDE" text. */
   onHide: () => void;
+  /** Whether the sidebar panel is currently shown. Purely a layout input now (Ctrl+K no longer hides the dock) — the dock's default (undragged) position/width shifts clear of the panel's column when it's open, and expands to use the freed width when it's closed. */
+  showUI: boolean;
 }
 
 // Mirrors App.tsx's own fmtTime — kept as a small local copy rather than a
@@ -123,7 +125,7 @@ function TimecodeDisplay({ time, duration, onSeek, disabled }: TimecodeDisplayPr
 export function TransportDock({
   isPaused, onTogglePlay, onRestart, currentTime, duration, onSeek,
   keyframes, selectedId, onSelect, onDelete, onRetime, onAddKeyframe, disabled,
-  pos, onPosChange, onHide,
+  pos, onPosChange, onHide, showUI,
 }: TransportDockProps) {
   const dockRef = useRef<HTMLDivElement>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
@@ -197,7 +199,7 @@ export function TransportDock({
   return (
     <div
       ref={dockRef}
-      className="transport-dock"
+      className={`transport-dock${showUI ? ' sidebar-open' : ''}`}
       style={pos ? { left: pos.x, top: pos.y, bottom: 'auto', transform: 'none' } : undefined}
     >
       <div className="dock-top-row">

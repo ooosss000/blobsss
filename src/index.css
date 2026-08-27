@@ -390,11 +390,11 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   display: flex;
   flex-direction: column;
   gap: 6px;
-  /* Above .panel's z-index:50 — at narrower viewports the dock's default
-     centered position can fall under the sidebar's 320px-wide column, and
-     it should render over the panel there rather than being hidden behind
-     it (its own semi-opaque background already reads fine layered on top
-     of the panel, same as any floating HUD/toolbar). */
+  /* Belt-and-suspenders: stays above .panel's z-index:50 even though the
+     .sidebar-open variant below is now the primary mechanism keeping the
+     dock's default position clear of the panel's column — this still
+     covers drag (no positional avoidance while dragging, by design) and
+     any viewport too narrow for the avoidance math to fully clear it. */
   z-index: 60;
   /* Scales with the viewport instead of stopping at a small fixed cap —
      on a wide screen the old 640px max made the actual draggable track
@@ -405,9 +405,10 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   border: 1px solid var(--text-hi);
   padding: 6px;
   /* Smooths out resizing (window resize crossing the narrow-viewport
-     breakpoint, or the clamp()-driven track height changing) instead of
-     snapping between sizes on every layout recalculation. */
-  transition: width 0.15s ease, padding 0.15s ease;
+     breakpoint, the sidebar opening/closing, or the clamp()-driven track
+     height changing) instead of snapping between sizes on every layout
+     recalculation. */
+  transition: width 0.15s ease, padding 0.15s ease, left 0.2s ease;
   /* A thin ruler-style track (like Premiere/most NLE timelines), not a
      tall clickable rectangle. Precision comes from a thicker, brighter
      playhead line (see .kf-playhead) rather than from a big track hit
@@ -418,6 +419,29 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   --track-h: clamp(16px, 1.8vw, 22px);
   --icon-w: 30px;
   --dock-gap: 5px;
+}
+/* When the sidebar (.panel, a fixed 320px-wide column pinned to the left)
+   is open, the dock's default position shifts right by half that width
+   so it centers in the REMAINING space instead of the full viewport —
+   it no longer sits over/near the panel's column at all — and narrows to
+   match, rather than overflowing into the panel's width. Closing the
+   sidebar removes both constraints, letting the dock re-center on and
+   widen to the full viewport (the "expand" behavior). Only affects the
+   default position — once dragged, the inline style's `left` always wins
+   over this class's `left`, though the width narrowing still applies. */
+.transport-dock.sidebar-open {
+  left: calc(50% + 160px);
+  width: min(1100px, calc(100vw - 320px - 32px));
+}
+@media (max-width: 800px) {
+  /* Below this width, shifting+narrowing by a fixed 320px leaves too
+     little room to be usable — fall back to the plain centered/full-width
+     layout and let the existing z-index above the panel handle overlap
+     instead, same as before this feature existed. */
+  .transport-dock.sidebar-open {
+    left: 50%;
+    width: min(1100px, calc(100vw - 32px));
+  }
 }
 .dock-top-row { display: flex; align-items: center; margin: -2px 0 2px; }
 .dock-grip {
