@@ -378,36 +378,65 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
 }
 .link-btn:hover { color: #fff; }
 
-/* ─── TRANSPORT OVERLAY ─────────────────────────────────────────────────── */
-.transport-overlay {
+/* ─── TRANSPORT DOCK ────────────────────────────────────────────────────── */
+.transport-dock {
   position: absolute;
   left: 50%;
   bottom: 24px;
   transform: translateX(-50%);
   display: flex;
+  flex-direction: column;
   gap: 8px;
   z-index: 40;
-}
-.transport-overlay .icon-btn {
-  width: 52px;
+  width: min(640px, calc(100vw - 48px));
   background: rgba(0, 0, 0, 0.72);
-  border-color: var(--text-hi);
+  border: 1px solid var(--text-hi);
+  padding: 10px;
 }
-.transport-overlay .icon-btn:hover { background: rgba(0, 0, 0, 0.92); }
-.transport-overlay .icon-btn:active { background: var(--text-hi); color: #000; }
+.dock-row { display: flex; align-items: center; gap: 8px; }
+.dock-row .icon-btn { width: 40px; flex-shrink: 0; }
+.dock-row .icon-btn:hover { background: rgba(255, 255, 255, 0.12); }
+.dock-row .icon-btn:active { background: var(--text-hi); color: #000; }
+.dock-time {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-mid);
+  letter-spacing: 0.04em;
+  min-width: 76px;
+  text-align: right;
+}
+.dock-status {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--text-mid);
+  text-align: center;
+}
 
-/* ─── KEYFRAME TIMELINE ─────────────────────────────────────────────────── */
-.kf-timeline { display: flex; flex-direction: column; gap: 6px; }
-.kf-track {
+/* ─── SCRUB / KEYFRAME TRACKS ───────────────────────────────────────────── */
+.scrub-track, .kf-track {
   position: relative;
-  height: 28px;
+  flex: 1;
+  height: 44px;
   background: var(--panel-bg);
   border: 1px solid var(--border);
-  cursor: pointer;
   touch-action: none;
+  /* Contains .kf-marker::before's enlarged hit-target at the track edges —
+     without this, a keyframe near time≈0 or time≈duration bleeds into the
+     adjacent nav/add buttons in .dock-row (only 8px gap), since an
+     absolutely-positioned child with no ancestor clip isn't limited to the
+     track's own box. Clipping here removes both the visual and functional
+     (pointer-event) overlap, since content outside overflow:hidden's box
+     isn't hit-tested either. */
+  overflow: hidden;
   user-select: none;
 }
-.kf-track.disabled {
+/* .scrub-track is click-to-seek everywhere; .kf-track is only interactive
+   on its markers (see .kf-marker below) — a pointer cursor over its empty
+   space would advertise a click affordance that isn't there. */
+.scrub-track { cursor: pointer; }
+.kf-track { cursor: default; }
+.scrub-track.disabled, .kf-track.disabled {
   pointer-events: none;
   opacity: 0.5;
   cursor: not-allowed;
@@ -422,7 +451,7 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
 .kf-marker {
   position: absolute;
   top: 50%; left: 0;
-  width: 10px; height: 10px;
+  width: 14px; height: 14px;
   transform: translate(-50%, -50%) rotate(45deg);
   background: var(--text-hi);
   border: 1px solid var(--bg);
@@ -433,9 +462,8 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   content: '';
   position: absolute;
   left: 50%; top: 50%;
-  width: 20px; height: 28px;
+  width: 28px; height: 44px;
   transform: translate(-50%, -50%) rotate(-45deg);
 }
 .kf-marker.selected { background: var(--accent); }
 .kf-marker:active { cursor: grabbing; }
-.kf-delete-btn { color: var(--accent); border-color: var(--accent); }

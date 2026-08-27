@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
-import { Video, Upload, Play, Pause, Loader2, RotateCcw, Plus } from 'lucide-react';
+import { Video, Upload, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BlobTracker } from './BlobTracker';
 import type { TrackerParams, RenderMode } from './BlobTracker';
 import { resolveActiveParams, clampExportPreviewSize, clampKeyframeTime } from './keyframes';
 import type { Keyframe } from './keyframes';
-import { KeyframeTimeline } from './KeyframeTimeline';
+import { TransportDock } from './TransportDock';
 import './index.css';
 
 const MODES: { id: RenderMode; label: string }[] = [
@@ -445,15 +445,22 @@ export default function App() {
         style={previewSize ? { width: previewSize.w, height: previewSize.h } : undefined}
         onClick={togglePlay}
       />
-      {videoSrc && (
-        <div className="transport-overlay">
-          <button className="btn-brut icon-btn" onClick={togglePlay}>
-            {isPaused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
-          </button>
-          <button className="btn-brut icon-btn" onClick={restart} title="Restart">
-            <RotateCcw size={14} />
-          </button>
-        </div>
+      {videoSrc && showUI && (
+        <TransportDock
+          isPaused={isPaused}
+          onTogglePlay={togglePlay}
+          onRestart={restart}
+          currentTime={currentTime}
+          duration={duration}
+          onSeek={seekTo}
+          keyframes={keyframes}
+          selectedId={selectedKeyframeId}
+          onSelect={setSelectedKeyframeId}
+          onDelete={deleteKeyframe}
+          onRetime={retimeKeyframe}
+          onAddKeyframe={addKeyframe}
+          disabled={isRecording || isEncoding}
+        />
       )}
 
       <AnimatePresence>
@@ -555,25 +562,10 @@ export default function App() {
                 </Section>
 
                 <Section label="KEYFRAMES">
-                  <KeyframeTimeline
-                    keyframes={keyframes}
-                    selectedId={selectedKeyframeId}
-                    currentTime={currentTime}
-                    duration={duration}
-                    onSelect={setSelectedKeyframeId}
-                    onDelete={deleteKeyframe}
-                    onRetime={retimeKeyframe}
-                    onSeek={seekTo}
-                    disabled={isRecording || isEncoding}
-                  />
-                  <button className="btn-brut flex-1 mt-8" onClick={addKeyframe}>
-                    <Plus size={13} />
-                    <span>ADD KEYFRAME AT {fmtTime(Math.floor(currentTime))}</span>
-                  </button>
                   <div className="hint-text">
                     {keyframes.length === 0
-                      ? 'No keyframes — export uses the static settings above.'
-                      : `${keyframes.length} keyframe${keyframes.length > 1 ? 's' : ''} — play/pause to position, drag markers to retime.`}
+                      ? 'No keyframes — export uses the static settings above. Use the dock at the bottom of the screen to add one.'
+                      : `${keyframes.length} keyframe${keyframes.length > 1 ? 's' : ''} — use the dock at the bottom of the screen to navigate, add, retime, or delete.`}
                   </div>
                 </Section>
 
