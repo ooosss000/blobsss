@@ -29,6 +29,11 @@ const baseParams: TrackerParams = {
   showId: true,
   showSize: false,
   showLabelBG: true,
+  strobeEnabled: false,
+  strobeIntensity: 1,
+  strobeColor: '#FFFFFF',
+  strobeDecayMs: 200,
+  strobeScope: 'canvas',
 };
 
 function kf(id: string, time: number, overrides: Partial<TrackerParams>): Keyframe {

@@ -40,6 +40,8 @@ export interface TrackedBlob {
   area: number;
   life: number;
   spawnX: number; spawnY: number;
+  /** `this.video.currentTime` at the moment this blob was created — used only by the 'blob'-scope strobe decay (see `applyStrobe()`). Video time, not wall-clock, so decay is correct/deterministic in both live preview and export. */
+  spawnTime: number;
   trail: { x: number; y: number }[];
   /** Position within a subdivided parent blob (0-indexed), or undefined for a primary (non-subdivided) blob. Used to identify the "anchor" sub-blob for gating one-label-per-parent logic, independent of numeric id (which grows unbounded and can't reliably distinguish primary blobs from sub-blobs once it exceeds 1000). */
   subIndex?: number;
@@ -78,6 +80,14 @@ export interface TrackerParams {
   showId: boolean;
   showSize: boolean;
   showLabelBG: boolean;
+  // Strobe — motion-triggered flash overlay, drawn after everything else in
+  // the frame. Plain fields governed by the unified keyframe system only
+  // (not part of the animated-params per-parameter-track set).
+  strobeEnabled: boolean;
+  strobeIntensity: number;  // peak alpha multiplier at the instant of trigger (0–2)
+  strobeColor: string;      // hex; white = flash brighter, black = flash darker
+  strobeDecayMs: number;    // ms for the flash to fade from full intensity to 0
+  strobeScope: 'canvas' | 'blob'; // 'canvas' = whole frame, 'blob' = only the spawning blob's box
 }
 
 let nextId = 1;
@@ -123,6 +133,8 @@ export class BlobTracker {
   private proxyH = 0;
   private scaleX = 1; private scaleY = 1;
   private lastFrameTime = 0;
+  /** `this.video.currentTime` of the most recent frame in which any new blob spawned — used only for 'canvas'-scope strobe (see `applyStrobe()`). 'blob' scope needs no separate state; it reads each blob's own `spawnTime`. Must be cleared on seek (see `resetTracking()`) or a canvas-wide flash could replay at a stale trigger time from an unrelated point in the video. */
+  private lastCanvasStrobeTime: number | null = null;
 
   constructor(video: HTMLVideoElement, canvas: HTMLCanvasElement, params: TrackerParams) {
     this.video = video;
@@ -342,10 +354,18 @@ export class BlobTracker {
    * very next `processFrame()`, producing a bogus one-frame motion blob.
    * Safe to call while blobs is already empty; `renderBlobs()`/
    * `getDisplayBlobs()` both handle a zero-length `this.blobs` cleanly.
+   *
+   * Also clears `lastCanvasStrobeTime`: clearing `this.blobs` above already
+   * takes care of 'blob'-scope strobe state (no blobs left to iterate in
+   * `applyStrobe()`), but `lastCanvasStrobeTime` is independent state that
+   * would otherwise survive the seek and could replay an incorrect
+   * canvas-wide flash computed against a trigger time from a completely
+   * different point in the video.
    */
   public resetTracking() {
     this.blobs = [];
     this.prevData = null;
+    this.lastCanvasStrobeTime = null;
   }
 
   /** Repaints the current frame with current params, without motion detection or blob aging. Used to refresh the preview after a param edit while paused. */
@@ -356,6 +376,7 @@ export class BlobTracker {
     }
     this.drawVideoFrame();
     this.renderBlobs();
+    this.applyStrobe();
   }
 
   private rvfcLoop = () => {
@@ -540,6 +561,7 @@ export class BlobTracker {
     this.currFramePixels = curr;
 
     this.renderBlobs();
+    this.applyStrobe();
   }
 
   // ─── MOTION DETECTION ─────────────────────────────────────────────────────
@@ -604,6 +626,7 @@ export class BlobTracker {
   private matchAndUpdate(detected: Array<{ cx:number; cy:number; x1:number; y1:number; x2:number; y2:number; area:number }>) {
     const maxDist = 80;
     const matched = new Set<number>();
+    let anySpawned = false;
 
     for (const det of detected) {
       const fcx = det.cx * this.scaleX, fcy = det.cy * this.scaleY;
@@ -634,19 +657,22 @@ export class BlobTracker {
       } else if (this.blobs.length < this.params.maxBlobs) {
         const w = Math.min(fw, this.params.maxBlobDim * this.scaleX);
         const h = Math.min(fh, this.params.maxBlobDim * this.scaleY);
-        this.blobs.push({ 
-          id: nextId++, 
-          cx: fcx, cy: fcy, 
-          x: fcx - w / 2, y: fcy - h / 2, 
-          w, h, 
+        this.blobs.push({
+          id: nextId++,
+          cx: fcx, cy: fcy,
+          x: fcx - w / 2, y: fcy - h / 2,
+          w, h,
           area: det.area,
-          life: this.params.lifeFrames, 
-          spawnX: fcx, spawnY: fcy, 
-          trail: [] 
+          life: this.params.lifeFrames,
+          spawnX: fcx, spawnY: fcy,
+          spawnTime: this.video.currentTime,
+          trail: []
         });
+        anySpawned = true;
       }
     }
 
+    if (anySpawned) this.lastCanvasStrobeTime = this.video.currentTime;
   }
 
   private getDisplayBlobs(): TrackedBlob[] {
@@ -699,6 +725,46 @@ export class BlobTracker {
 
     this.ctx.globalAlpha = 1;
     this.ctx.globalCompositeOperation = 'source-over';
+  }
+
+  /**
+   * Motion-triggered strobe overlay: a plain alpha-blended fill of
+   * `strobeColor`, decaying linearly from `strobeIntensity` to 0 over
+   * `strobeDecayMs`, drawn after everything else in the frame (called only
+   * from `processFrame()`/`renderOnce()`, after `renderBlobs()`). Uses
+   * `source-over` alpha blending rather than a blend-mode trick (e.g.
+   * `screen`/`multiply`) so black and white flashes behave symmetrically.
+   *
+   * Keyed off `this.video.currentTime`, not wall-clock time, so the decay
+   * is correct and deterministic in both live preview and non-realtime
+   * export, consistent with every other time-based calculation in this
+   * class (keyframe resolution, trail aging, the RECON_SCAN pulse).
+   */
+  private applyStrobe() {
+    const p = this.params;
+    if (!p.strobeEnabled || p.strobeDecayMs <= 0) return;
+
+    const now = this.video.currentTime;
+    this.ctx.globalCompositeOperation = 'source-over';
+    this.ctx.fillStyle = p.strobeColor;
+
+    if (p.strobeScope === 'canvas') {
+      if (this.lastCanvasStrobeTime === null) return;
+      const decay = 1 - ((now - this.lastCanvasStrobeTime) * 1000) / p.strobeDecayMs;
+      if (decay > 0) {
+        this.ctx.globalAlpha = Math.max(0, Math.min(1, p.strobeIntensity * decay));
+        this.ctx.fillRect(0, 0, this.width, this.height);
+      }
+    } else {
+      for (const b of this.blobs) {
+        const decay = 1 - ((now - b.spawnTime) * 1000) / p.strobeDecayMs;
+        if (decay <= 0) continue;
+        this.ctx.globalAlpha = Math.max(0, Math.min(1, p.strobeIntensity * decay));
+        this.ctx.fillRect(b.x, b.y, b.w, b.h);
+      }
+    }
+
+    this.ctx.globalAlpha = 1;
   }
 
   // ─── MODE: BOX_INVERT ─────────────────────────────────────────────────────

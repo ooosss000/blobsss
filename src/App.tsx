@@ -48,6 +48,11 @@ const DEFAULT_PARAMS: TrackerParams = {
   showId: true,
   showSize: false,
   showLabelBG: true,
+  strobeEnabled: false,
+  strobeIntensity: 1,
+  strobeColor: '#FFFFFF',
+  strobeDecayMs: 200,
+  strobeScope: 'canvas',
 };
 
 // ─── MAIN APP ──────────────────────────────────────────────────────────────────
@@ -576,6 +581,23 @@ export default function App() {
                     <BrutSlider label="TEMPERATURE" value={displayParams.temperature} min={-1} max={1} step={0.05} onChange={v => setDisplayParam('temperature', v)} />
                   </Row2>
                   <div className="toggle-row"><span>APPLY GRADE TO MP4</span><BrutToggle value={gradeExport} onChange={setGradeExport} /></div>
+                </Section>
+
+                <Section label="STROBE">
+                  <div className="toggle-row"><span>ENABLE STROBE</span><BrutToggle value={displayParams.strobeEnabled} onChange={v => setDisplayParam('strobeEnabled', v)} /></div>
+                  {displayParams.strobeEnabled && (
+                    <>
+                      <BrutSlider label="INTENSITY" value={displayParams.strobeIntensity} min={0} max={2} step={0.05} onChange={v => setDisplayParam('strobeIntensity', v)} />
+                      <ColorRow label="COLOR" value={displayParams.strobeColor} onChange={v => setDisplayParam('strobeColor', v)} />
+                      <BrutSlider label="DECAY MS" value={displayParams.strobeDecayMs} min={50} max={1000} step={10} onChange={v => setDisplayParam('strobeDecayMs', v)} />
+                      <div className="row gap-8">
+                        <button className={`mode-btn flex-1${displayParams.strobeScope === 'canvas' ? ' active' : ''}`}
+                          onClick={() => setDisplayParam('strobeScope', 'canvas')}>CANVAS</button>
+                        <button className={`mode-btn flex-1${displayParams.strobeScope === 'blob' ? ' active' : ''}`}
+                          onClick={() => setDisplayParam('strobeScope', 'blob')}>BLOB</button>
+                      </div>
+                    </>
+                  )}
                 </Section>
 
                 <Section label="LABELS">
