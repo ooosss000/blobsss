@@ -48,6 +48,86 @@ const JUMP_EPS = 0.01;
 // this too.
 const PANEL_WIDTH_FALLBACK = 320;
 
+// M:SS.mmm — millisecond precision for the editable timecode readout,
+// distinct from fmtTime's coarser M:SS (used for the status line, where
+// keyframe times don't need sub-second precision).
+const fmtTimecode = (s: number) => {
+  const totalMs = Math.max(0, Math.round(s * 1000));
+  const mm = Math.floor(totalMs / 60000);
+  const ss = Math.floor((totalMs % 60000) / 1000);
+  const ms = totalMs % 1000;
+  return `${mm}:${ss.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+};
+
+// Accepts M:SS, M:SS.m, M:SS.mm, or M:SS.mmm (partial millisecond digits are
+// treated as the leading digits of a 3-digit value, e.g. ".5" -> 500ms, not
+// 5ms — matches how a user typing left-to-right would expect it to round).
+// Returns null for anything that doesn't parse, so the caller can silently
+// ignore an invalid edit rather than needing dedicated error UI.
+const parseTimecode = (input: string): number | null => {
+  const match = input.trim().match(/^(\d+):(\d{1,2})(?:\.(\d{1,3}))?$/);
+  if (!match) return null;
+  const mm = parseInt(match[1], 10);
+  const ss = parseInt(match[2], 10);
+  if (ss >= 60) return null;
+  const ms = match[3] ? parseInt(match[3].padEnd(3, '0'), 10) : 0;
+  return mm * 60 + ss + ms / 1000;
+};
+
+interface TimecodeDisplayProps {
+  time: number;
+  duration: number;
+  onSeek: (t: number) => void;
+  disabled: boolean;
+}
+
+// Click the readout to type an exact M:SS.mmm position, Premiere-style —
+// Enter commits (seeking, clamped to [0, duration]), Escape or blur without
+// a valid parse just reverts to the display, discarding the draft.
+function TimecodeDisplay({ time, duration, onSeek, disabled }: TimecodeDisplayProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) { inputRef.current?.focus(); inputRef.current?.select(); }
+  }, [editing]);
+
+  const startEdit = () => {
+    if (disabled) return;
+    setDraft(fmtTimecode(time));
+    setEditing(true);
+  };
+
+  const commit = () => {
+    const parsed = parseTimecode(draft);
+    if (parsed !== null) onSeek(Math.min(Math.max(0, parsed), duration));
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        className="dock-timecode-input"
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') setEditing(false);
+        }}
+      />
+    );
+  }
+
+  return (
+    <span className="dock-time" onClick={startEdit} title="Click to enter an exact time">
+      {fmtTimecode(time)} / {fmtTimecode(duration)}
+    </span>
+  );
+}
+
 export function TransportDock({
   isPaused, onTogglePlay, onRestart, currentTime, duration, onSeek,
   keyframes, selectedId, onSelect, onDelete, onRetime, onAddKeyframe, disabled,
@@ -121,6 +201,13 @@ export function TransportDock({
 
   const jumpTo = (kf: Keyframe) => { onSeek(kf.time); onSelect(kf.id); };
 
+  // Double-click-to-add on the keyframe track: seeking first (synchronous —
+  // setting video.currentTime updates the property immediately, even though
+  // the decoded frame itself catches up asynchronously) means onAddKeyframe
+  // reads the correct new time when it runs right after, with no need for
+  // App.tsx's addKeyframe to accept an explicit time argument.
+  const addKeyframeAt = (time: number) => { onSeek(time); onAddKeyframe(); };
+
   const selectedKf = selectedId ? keyframes.find(k => k.id === selectedId) : undefined;
   const statusText = selectedKf ? `EDITING KEYFRAME @ ${fmtTime(Math.floor(selectedKf.time))}` : 'EDITING LIVE';
 
@@ -143,26 +230,32 @@ export function TransportDock({
       </div>
 
       <div className="dock-row">
-        <button className="btn-brut icon-btn" onClick={onTogglePlay} disabled={disabled}>
-          {isPaused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
-        </button>
-        <button className="btn-brut icon-btn" onClick={onRestart} disabled={disabled} title="Restart">
-          <RotateCcw size={14} />
-        </button>
+        <div className="dock-lead">
+          <button className="btn-brut icon-btn" onClick={onTogglePlay} disabled={disabled}>
+            {isPaused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
+          </button>
+          <button className="btn-brut icon-btn" onClick={onRestart} disabled={disabled} title="Restart">
+            <RotateCcw size={14} />
+          </button>
+        </div>
         <VideoScrubBar currentTime={currentTime} duration={duration} onSeek={onSeek} disabled={disabled} />
-        <span className="dock-time">{fmtTime(Math.floor(currentTime))} / {fmtTime(Math.floor(duration))}</span>
+        <div className="dock-trail">
+          <TimecodeDisplay time={currentTime} duration={duration} onSeek={onSeek} disabled={disabled} />
+        </div>
       </div>
       <div className="dock-caption">DRAG TO SEEK</div>
 
       <div className="dock-row">
-        <button
-          className="btn-brut icon-btn"
-          onClick={() => prevKf && jumpTo(prevKf)}
-          disabled={disabled || !prevKf}
-          title="Jump to previous keyframe"
-        >
-          <ChevronLeft size={14} />
-        </button>
+        <div className="dock-lead">
+          <button
+            className="btn-brut icon-btn"
+            onClick={() => prevKf && jumpTo(prevKf)}
+            disabled={disabled || !prevKf}
+            title="Jump to previous keyframe"
+          >
+            <ChevronLeft size={14} />
+          </button>
+        </div>
         <KeyframeBar
           keyframes={keyframes}
           selectedId={selectedId}
@@ -170,24 +263,36 @@ export function TransportDock({
           duration={duration}
           onSelect={onSelect}
           onRetime={onRetime}
+          onAddKeyframeAt={addKeyframeAt}
           disabled={disabled}
         />
-        <button
-          className="btn-brut icon-btn"
-          onClick={() => nextKf && jumpTo(nextKf)}
-          disabled={disabled || !nextKf}
-          title="Jump to next keyframe"
-        >
-          <ChevronRight size={14} />
-        </button>
-        <button className="btn-brut icon-btn" onClick={onAddKeyframe} disabled={disabled} title="Add keyframe">
-          <Plus size={14} />
-        </button>
-        {selectedId && (
-          <button className="btn-brut icon-btn" onClick={() => onDelete(selectedId)} disabled={disabled} title="Delete keyframe">
+        <div className="dock-trail">
+          <button
+            className="btn-brut icon-btn"
+            onClick={() => nextKf && jumpTo(nextKf)}
+            disabled={disabled || !nextKf}
+            title="Jump to next keyframe"
+          >
+            <ChevronRight size={14} />
+          </button>
+          <button className="btn-brut icon-btn" onClick={onAddKeyframe} disabled={disabled} title="Add keyframe">
+            <Plus size={14} />
+          </button>
+          {/* Always rendered (rather than conditional on selectedId) so this
+              row's trailing zone stays a constant width — a width that
+              changes when a keyframe gets selected/deselected would shift
+              the track's right edge and break its alignment with the scrub
+              row's track above, even after the .dock-lead/.dock-trail fix. */}
+          <button
+            className="btn-brut icon-btn"
+            onClick={() => selectedId && onDelete(selectedId)}
+            disabled={disabled || !selectedId}
+            title="Delete keyframe"
+            style={{ visibility: selectedId ? 'visible' : 'hidden' }}
+          >
             <X size={14} />
           </button>
-        )}
+        </div>
       </div>
       <div className="dock-caption">CLICK MARKER TO SELECT · DRAG TO RETIME</div>
 

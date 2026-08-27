@@ -8,6 +8,7 @@
   --panel-bg:  #0a0a0a;
   --border:    #222222;
   --accent:    #FF2D00;
+  --keyframe:  #FFD400; /* keyframe markers — distinct from --accent (playhead/recording/errors) */
   --text-hi:   #FFFFFF;
   --text-mid:  #888888;
   --text-lo:   #444444;
@@ -165,7 +166,7 @@ body {
 .btn-brut.recording    { border-color: var(--accent); color: var(--accent); animation: pulse-border 1s infinite; }
 .btn-brut:disabled     { opacity: 0.3; cursor: not-allowed; }
 
-.icon-btn { padding: 10px; aspect-ratio: 1; flex-shrink: 0; width: 42px; }
+.icon-btn { padding: 10px; aspect-ratio: 1; flex-shrink: 0; width: 42px; cursor: default; }
 
 @keyframes pulse-border {
   0%, 100% { border-color: var(--accent); }
@@ -395,13 +396,39 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   width: min(1100px, calc(100vw - 32px));
   background: rgba(0, 0, 0, 0.72);
   border: 1px solid var(--text-hi);
-  padding: 10px;
-  /* Scales smoothly with viewport width (bounded both ends) rather than a
-     fixed px height, so the tracks stay comfortably thick on a large
-     screen without overshooting on a small one. Every dependent dimension
-     below (marker size, hit-target) derives from this via calc() so they
-     stay proportional at any viewport width without extra breakpoints. */
-  --track-h: clamp(64px, 6vw, 88px);
+  padding: 7px;
+  /* A thin ruler-style track (like Premiere/most NLE timelines), not a
+     tall clickable rectangle. Precision comes from a thicker, brighter
+     playhead line (see .kf-playhead) rather than from a big track hit
+     area; markers below use max() floors so they stay comfortably
+     clickable even at this track's small height. Every dependent
+     dimension still derives from this via calc()/max() so they scale
+     smoothly with viewport width without extra breakpoints. */
+  --track-h: clamp(20px, 2.2vw, 28px);
+  /* Shared by .dock-lead/.dock-trail below so the scrub row's track and the
+     keyframe row's track start/end at the exact same x position, even
+     though the two rows have a different number of buttons around their
+     track (2 leading buttons in the scrub row vs. 1 in the keyframe row;
+     up to 3 trailing buttons in the keyframe row vs. a time readout in the
+     scrub row). Without this, a given time percentage renders at a
+     different absolute pixel position in each row — the playhead/keyframe
+     markers visibly don't line up between the two stacked tracks. */
+  --icon-w: 34px;
+  --dock-gap: 6px;
+}
+.dock-lead {
+  width: calc(var(--icon-w) * 2 + var(--dock-gap));
+  display: flex;
+  gap: var(--dock-gap);
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+.dock-trail {
+  width: calc(var(--icon-w) * 3 + var(--dock-gap) * 2);
+  display: flex;
+  align-items: center;
+  gap: var(--dock-gap);
+  flex-shrink: 0;
 }
 .dock-grip {
   display: flex;
@@ -412,7 +439,9 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   color: var(--text-mid);
   cursor: grab;
   touch-action: none;
+  transition: color 0.1s;
 }
+.dock-grip:hover { color: var(--text-hi); }
 .dock-grip:active { cursor: grabbing; color: var(--text-hi); }
 .dock-caption {
   font-size: 9px;
@@ -421,18 +450,33 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   text-align: center;
   margin-top: -4px;
 }
-.dock-row { display: flex; align-items: center; gap: 8px; }
-.dock-row .icon-btn { width: 40px; flex-shrink: 0; }
-.dock-row .icon-btn:hover { background: rgba(255, 255, 255, 0.12); }
+.dock-row { display: flex; align-items: center; gap: var(--dock-gap); }
+.dock-row .icon-btn { width: var(--icon-w); flex-shrink: 0; }
+.dock-row .icon-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); border-color: var(--text-hi); }
 .dock-row .icon-btn:active { background: var(--text-hi); color: #000; }
 .dock-time {
-  flex-shrink: 0;
+  flex: 1;
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-mid);
   letter-spacing: 0.04em;
-  min-width: 76px;
   text-align: right;
+  cursor: text;
+}
+.dock-time:hover { color: var(--text-hi); }
+.dock-timecode-input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-align: right;
+  color: var(--text-hi);
+  background: var(--panel-bg);
+  border: 1px solid var(--accent);
+  outline: none;
+  padding: 1px 3px;
 }
 .dock-status {
   font-size: 10px;
@@ -447,10 +491,14 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
    so this tier shrinks the fixed-width chrome to keep the track (the
    thing that actually needs the room) as large as possible. */
 @media (max-width: 560px) {
-  .transport-dock { width: calc(100vw - 16px); padding: 8px; gap: 6px; }
-  .dock-row { gap: 6px; }
-  .dock-row .icon-btn { width: 34px; }
-  .dock-time { min-width: 58px; font-size: 11px; }
+  .transport-dock {
+    width: calc(100vw - 16px);
+    padding: 6px;
+    gap: 5px;
+    --icon-w: 28px;
+    --dock-gap: 5px;
+  }
+  .dock-time { font-size: 11px; }
   .scrub-track, .kf-track { min-width: 80px; }
 }
 
@@ -460,8 +508,6 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   flex: 1;
   min-width: 120px;
   height: var(--track-h);
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
   touch-action: none;
   /* Contains .kf-marker::before's enlarged hit-target at the track edges —
      without this, a keyframe near time≈0 or time≈duration bleeds into the
@@ -472,6 +518,20 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
      isn't hit-tested either. */
   overflow: hidden;
   user-select: none;
+}
+/* The scrub bar keeps a filled box (it's a distinct draggable control), but
+   the keyframe track is deliberately NOT a filled rectangle — Premiere and
+   most NLEs render a keyframe lane as a thin baseline line with diamonds
+   sitting on it, not a boxed track. The line lives on .kf-track itself
+   (::before) so it's always present even with zero keyframes. */
+.scrub-track { background: var(--panel-bg); border: 1px solid var(--border); }
+.kf-track::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; top: 50%;
+  height: 1px;
+  background: var(--border);
+  transform: translateY(-50%);
 }
 /* .scrub-track is click-to-seek everywhere; .kf-track is only interactive
    on its markers (see .kf-marker below) — a pointer cursor over its empty
@@ -486,26 +546,37 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
 .kf-playhead {
   position: absolute;
   top: 0; bottom: 0;
-  width: 2px;
-  background: var(--text-mid);
+  left: 0;
+  width: 5px;
+  transform: translateX(-50%);
+  background: var(--accent);
   pointer-events: none;
 }
+/* A plain diamond sitting on the track's horizontal baseline line — no
+   border (a border on a small rotated square just reads as a boxy frame
+   at this size) and no filled background box around it. */
 .kf-marker {
   position: absolute;
   top: 50%; left: 0;
-  width: calc(var(--track-h) * 0.32); height: calc(var(--track-h) * 0.32);
+  width: max(12px, calc(var(--track-h) * 0.4)); height: max(12px, calc(var(--track-h) * 0.4));
   transform: translate(-50%, -50%) rotate(45deg);
   background: var(--text-hi);
-  border: 1px solid var(--bg);
   cursor: grab;
   touch-action: none;
+  transition: background 0.1s;
 }
 .kf-marker::before {
+  /* Invisible enlarged hit-target — the visible diamond stays compact, but
+     the actual clickable/draggable area is comfortably wider. */
   content: '';
   position: absolute;
   left: 50%; top: 50%;
-  width: calc(var(--track-h) * 0.64); height: var(--track-h);
+  width: max(24px, calc(var(--track-h) * 0.8)); height: var(--track-h);
   transform: translate(-50%, -50%) rotate(-45deg);
 }
-.kf-marker.selected { background: var(--accent); }
+/* Distinct from --accent (used by the playhead, recording indicator, and
+   error states) so "current time" and "selected keyframe" never read as
+   the same thing, even when they visually coincide. */
+.kf-marker.selected { background: var(--keyframe); }
+.kf-marker:hover { background: var(--keyframe); }
 .kf-marker:active { cursor: grabbing; }

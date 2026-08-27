@@ -9,6 +9,8 @@ interface KeyframeBarProps {
   duration: number;
   onSelect: (id: string | null) => void;
   onRetime: (id: string, time: number) => void;
+  /** Double-click on empty track space adds a keyframe at that time — an alternative to the dock's ADD button, mirroring the double-click-to-add-marker convention in most video editor timelines. */
+  onAddKeyframeAt: (time: number) => void;
   /** Disables marker interaction — set during MP4 recording/encoding, matching the other export-adjacent controls in App.tsx. */
   disabled: boolean;
 }
@@ -21,7 +23,7 @@ interface KeyframeBarProps {
  * interactive elements here are the markers themselves.
  */
 export function KeyframeBar({
-  keyframes, selectedId, currentTime, duration, onSelect, onRetime, disabled,
+  keyframes, selectedId, currentTime, duration, onSelect, onRetime, onAddKeyframeAt, disabled,
 }: KeyframeBarProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -68,6 +70,11 @@ export function KeyframeBar({
 
   const handlePointerUp = () => setDraggingId(null);
 
+  const handleTrackDoubleClick = (e: React.MouseEvent) => {
+    if (disabled) return;
+    onAddKeyframeAt(clientXToTime(e.clientX));
+  };
+
   return (
     <div
       className={`kf-track${disabled ? ' disabled' : ''}`}
@@ -76,6 +83,7 @@ export function KeyframeBar({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
       onLostPointerCapture={handlePointerUp}
+      onDoubleClick={handleTrackDoubleClick}
     >
       <div className="kf-playhead" style={{ left: `${pct(currentTime)}%` }} />
       {keyframes.map(k => (
@@ -91,6 +99,7 @@ export function KeyframeBar({
             if (k.id === selectedId) return; // keep a keyframe selected while any exist — deselecting would silently disable panel edits (resolver overrides global params every frame)
             onSelect(k.id);
           }}
+          onDoubleClick={e => e.stopPropagation()}
           title={`${k.time.toFixed(2)}s`}
         />
       ))}

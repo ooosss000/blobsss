@@ -259,6 +259,14 @@ export default function App() {
 
   const seekTo = (time: number) => {
     if (videoRef.current) videoRef.current.currentTime = time;
+    // Update the playhead position immediately rather than waiting for the
+    // video's own 'seeked'/'timeupdate' events to confirm it — those only
+    // fire once the browser has actually processed the seek (real decode
+    // latency), so during a fast drag on the scrub bar the playhead would
+    // otherwise visibly lag behind the pointer. The actual video frame
+    // still catches up asynchronously same as before; only the timeline
+    // cursor's position is now optimistic.
+    setCurrentTime(time);
   };
 
   const addKeyframe = () => {
