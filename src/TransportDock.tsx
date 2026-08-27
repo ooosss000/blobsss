@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Play, Pause, RotateCcw, ChevronLeft, ChevronRight, Plus, X, GripVertical } from 'lucide-react';
-import type { Keyframe } from './keyframes';
+import type { Keyframe, ParamTracks, AnimatableParamKey, CurveType } from './keyframes';
 import { TimelineBar } from './TimelineBar';
+import { AnimatedParamsPanel } from './AnimatedParamsPanel';
 
 interface TransportDockProps {
   isPaused: boolean;
@@ -17,6 +18,14 @@ interface TransportDockProps {
   onRetime: (id: string, time: number) => void;
   onAddKeyframe: () => void;
   disabled: boolean;
+  /** Per-parameter keyframe tracks (Premiere-style animated properties) — an independent system from `keyframes` above, rendered in the collapsible ANIMATED PARAMS section. See docs/superpowers/plans/2026-08-27-per-parameter-keyframe-tracks.md. */
+  paramTracks: ParamTracks;
+  selectedParamKeyframeIds: Partial<Record<AnimatableParamKey, string | null>>;
+  onSelectParamKeyframe: (key: AnimatableParamKey, id: string | null) => void;
+  onRetimeParamKeyframe: (key: AnimatableParamKey, id: string, time: number) => void;
+  onDeleteParamKeyframe: (key: AnimatableParamKey, id: string) => void;
+  onAddParamKeyframeAt: (key: AnimatableParamKey, time: number) => void;
+  onSetParamKeyframeCurve: (key: AnimatableParamKey, id: string, curve: CurveType) => void;
   /**
    * null = use the default CSS position (bottom-center); otherwise explicit
    * viewport-relative coordinates. Lifted to the parent (rather than local
@@ -123,6 +132,8 @@ function TimecodeDisplay({ time, duration, onSeek, disabled }: TimecodeDisplayPr
 export function TransportDock({
   isPaused, onTogglePlay, onRestart, currentTime, duration, onSeek,
   keyframes, selectedId, onSelect, onDelete, onRetime, onAddKeyframe, disabled,
+  paramTracks, selectedParamKeyframeIds, onSelectParamKeyframe, onRetimeParamKeyframe,
+  onDeleteParamKeyframe, onAddParamKeyframeAt, onSetParamKeyframeCurve,
   pos, onPosChange, onHide,
 }: TransportDockProps) {
   const dockRef = useRef<HTMLDivElement>(null);
@@ -269,6 +280,18 @@ export function TransportDock({
       <div className="dock-caption">DRAG TO SEEK · DOUBLE-CLICK OR + TO ADD KEYFRAME · DRAG DIAMOND TO RETIME</div>
 
       <div className="dock-status">{statusText}</div>
+
+      <AnimatedParamsPanel
+        paramTracks={paramTracks}
+        duration={duration}
+        disabled={disabled}
+        selectedParamKeyframeIds={selectedParamKeyframeIds}
+        onSelect={onSelectParamKeyframe}
+        onRetime={onRetimeParamKeyframe}
+        onDelete={onDeleteParamKeyframe}
+        onAddAt={onAddParamKeyframeAt}
+        onSetCurve={onSetParamKeyframeCurve}
+      />
     </div>
   );
 }

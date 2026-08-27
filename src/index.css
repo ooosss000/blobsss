@@ -572,3 +572,91 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
 .kf-marker.selected { background: var(--keyframe); }
 .kf-marker:hover { background: var(--keyframe); }
 .kf-marker:active { cursor: grabbing; }
+
+/* ─── STOPWATCH TOGGLE (per-parameter keyframe animation) ────────────────── */
+/* Small clock-icon button sitting next to one of the 9 animatable sliders'
+   labels — Premiere-style: dim/outline when off (this param has no track,
+   the slider edits the global value directly), accent-filled when on (this
+   param has its own keyframe track). */
+.stopwatch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 1px;
+  background: transparent;
+  border: none;
+  color: var(--text-lo);
+  cursor: pointer;
+  line-height: 0;
+  transition: color 0.1s;
+  flex-shrink: 0;
+}
+.stopwatch-btn:hover { color: var(--text-hi); }
+.stopwatch-btn.active { color: var(--accent); }
+
+/* ─── ANIMATED PARAMS PANEL (per-parameter keyframe tracks) ──────────────── */
+.anim-params-panel { margin-top: 2px; }
+.anim-params-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--text-lo);
+  cursor: pointer;
+  padding: 3px 0;
+  transition: color 0.1s;
+  user-select: none;
+}
+.anim-params-header:hover { color: var(--text-hi); }
+.anim-params-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+}
+.anim-param-row { display: flex; flex-direction: column; gap: 2px; }
+.anim-param-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  color: var(--text-mid);
+}
+.anim-param-row-controls { display: flex; align-items: center; gap: 4px; }
+.curve-toggle-btn {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-lo);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+.curve-toggle-btn:hover:not(:disabled) { border-color: var(--text-mid); color: var(--text-hi); }
+.curve-toggle-btn.on { border-color: var(--accent); color: var(--accent); background: rgba(255,45,0,0.08); }
+.curve-toggle-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.anim-param-row-del {
+  background: transparent;
+  border: none;
+  color: var(--text-lo);
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 0;
+  transition: color 0.1s;
+}
+.anim-param-row-del:hover:not(:disabled) { color: var(--accent); }
+.anim-param-row-del:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* A smaller variant of --track-h for per-param rows in the ANIMATED PARAMS
+   panel — same visual language as the main .kf-track/.kf-marker (thin
+   baseline + diamonds), just more compact since there's one per animated
+   param stacked vertically, and no playhead repeated per row (the dock's
+   single shared timeline above already shows it). */
+.param-track {
+  --track-h: var(--param-track-h, clamp(11px, 1.2vw, 14px));
+}

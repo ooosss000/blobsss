@@ -8,6 +8,127 @@ export interface Keyframe {
 
 export const MIN_KEYFRAME_GAP = 0.05; // seconds
 
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const clean = hex.replace('#', '');
+  const full = clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean;
+  const num = parseInt(full, 16);
+  return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
+  return '#' + [r, g, b].map(v => clamp(v).toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+function lerpColor(a: string, b: string, t: number): string {
+  const pa = hexToRgb(a);
+  const pb = hexToRgb(b);
+  return rgbToHex(
+    pa.r + (pb.r - pa.r) * t,
+    pa.g + (pb.g - pa.g) * t,
+    pa.b + (pb.b - pa.b) * t,
+  );
+}
+
+// ─── Per-parameter keyframe tracks ──────────────────────────────────────────
+//
+// A second, independent keyframing system layered alongside the unified
+// Keyframe[] timeline above. Only these 9 fields get their own track; every
+// other TrackerParams field stays governed exclusively by the unified
+// timeline via resolveActiveParams, unchanged. See
+// docs/superpowers/plans/2026-08-27-per-parameter-keyframe-tracks.md for the
+// full design.
+export const ANIMATABLE_PARAM_KEYS = [
+  'brightness', 'contrast', 'saturation', 'hue', 'gamma', 'temperature',
+  'strokeColor', 'strokeWidth', 'renderMode',
+] as const satisfies readonly (keyof TrackerParams)[];
+
+export type AnimatableParamKey = typeof ANIMATABLE_PARAM_KEYS[number];
+
+export type CurveType = 'hold' | 'linear';
+
+export interface ParamKeyframe {
+  id: string;
+  time: number;
+  value: number | string; // number for numeric keys, string (hex or RenderMode) otherwise
+  curve: CurveType; // interpolation OUT of this keyframe toward the next one on the same track
+}
+
+export type ParamTracks = Partial<Record<AnimatableParamKey, ParamKeyframe[]>>;
+
+/**
+ * Resolves a single animatable param's value at a given time from its own
+ * track. Hold before the first keyframe and after the last one. Between two
+ * keyframes, the earlier one's `curve` governs: 'hold' keeps its value
+ * unchanged right up to (not including) the next keyframe's own time;
+ * 'linear' blends numerically, or channel-wise for '#'-prefixed hex color
+ * strings. Anything else (e.g. a RenderMode string erroneously marked
+ * 'linear' — there's no such thing as a blend between two enum strings)
+ * falls back to holding the earlier keyframe's value, defensively.
+ */
+export function resolveParamValue(
+  track: ParamKeyframe[] | undefined,
+  time: number,
+  fallback: number | string,
+): number | string {
+  if (!track || track.length === 0) return fallback;
+
+  const sorted = [...track].sort((a, b) => a.time - b.time);
+  if (sorted.length === 1) return sorted[0].value;
+
+  // The most recent keyframe at or before `time` is the "previous" one
+  // governing this instant; before the first keyframe's own time, hold its
+  // value anyway (nothing earlier to show).
+  let prevIdx = -1;
+  for (let i = 0; i < sorted.length; i++) {
+    if (sorted[i].time <= time) prevIdx = i;
+    else break;
+  }
+  if (prevIdx === -1) return sorted[0].value;
+
+  const kPrev = sorted[prevIdx];
+  if (prevIdx === sorted.length - 1) return kPrev.value; // after the last keyframe
+
+  if (kPrev.curve !== 'linear') return kPrev.value; // hold segment
+
+  const kNext = sorted[prevIdx + 1];
+  const span = kNext.time - kPrev.time;
+  const t = span <= 0 ? 1 : Math.max(0, Math.min(1, (time - kPrev.time) / span));
+
+  if (typeof kPrev.value === 'number' && typeof kNext.value === 'number') {
+    return kPrev.value + (kNext.value - kPrev.value) * t;
+  }
+  if (
+    typeof kPrev.value === 'string' && typeof kNext.value === 'string' &&
+    kPrev.value.startsWith('#') && kNext.value.startsWith('#')
+  ) {
+    return lerpColor(kPrev.value, kNext.value, t);
+  }
+  // Defensive fallback for a type/curve mismatch (e.g. renderMode marked linear).
+  return kPrev.value;
+}
+
+/**
+ * Merges the 9 animatable params' own tracks over a `base` TrackerParams
+ * (typically the unified system's own resolved snapshot for this instant —
+ * see resolveActiveParams). Any of the 9 keys without its own track (or an
+ * empty one) simply keeps `base`'s value for that field, unchanged.
+ */
+export function resolveAnimatedParams(
+  paramTracks: ParamTracks,
+  time: number,
+  base: TrackerParams,
+): TrackerParams {
+  const result = { ...base };
+  for (const key of ANIMATABLE_PARAM_KEYS) {
+    const track = paramTracks[key];
+    if (track && track.length > 0) {
+      (result[key] as number | string) = resolveParamValue(track, time, base[key] as number | string);
+    }
+  }
+  return result;
+}
+
 /**
  * Resolves the active TrackerParams at a given video time, given a set of
  * keyframes. This is a "hold" step function, not an interpolation: a
@@ -79,7 +200,7 @@ export function clampExportPreviewSize(
  * at this spacing), returns the closest best-effort position.
  */
 export function clampKeyframeTime(
-  keyframes: Keyframe[],
+  keyframes: { id: string; time: number }[],
   id: string,
   proposedTime: number,
   duration: number,
