@@ -431,17 +431,16 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
    over this class's `left`, though the width narrowing still applies. */
 .transport-dock.sidebar-open {
   left: calc(50% + 160px);
-  width: min(1100px, calc(100vw - 320px - 32px));
-}
-@media (max-width: 800px) {
-  /* Below this width, shifting+narrowing by a fixed 320px leaves too
-     little room to be usable — fall back to the plain centered/full-width
-     layout and let the existing z-index above the panel handle overlap
-     instead, same as before this feature existed. */
-  .transport-dock.sidebar-open {
-    left: 50%;
-    width: min(1100px, calc(100vw - 32px));
-  }
+  /* No narrow-viewport fallback to a plain centered/full-width layout —
+     always shift clear of the sidebar's column, at any width. Deliberately
+     no minimum-width floor either: a floor could force the dock wider
+     than the actual free space next to the sidebar, pushing it partially
+     off the right edge of the screen on a narrow window — worse than
+     being merely cramped. This formula is self-bounding (width always
+     equals exactly what's left after the sidebar and margins), so the
+     dock may get uncomfortably thin on a very small window, but it can
+     never overlap the sidebar OR overflow off-screen. */
+  width: max(60px, min(1100px, calc(100vw - 320px - 32px)));
 }
 .dock-top-row { display: flex; align-items: center; margin: -2px 0 2px; }
 .dock-grip {
