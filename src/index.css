@@ -388,7 +388,11 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   flex-direction: column;
   gap: 8px;
   z-index: 40;
-  width: min(640px, calc(100vw - 48px));
+  /* Scales with the viewport instead of stopping at a small fixed cap —
+     on a wide screen the old 640px max made the actual draggable track
+     width stay small regardless of how much room there was, which is
+     exactly what made precise scrubbing/retiming feel cramped. */
+  width: min(1100px, calc(100vw - 32px));
   background: rgba(0, 0, 0, 0.72);
   border: 1px solid var(--text-hi);
   padding: 10px;
@@ -413,11 +417,25 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   text-align: center;
 }
 
+/* Icon buttons in the dock have a fixed width (flex-shrink: 0) — only the
+   track flexes. Below this width the un-shrinking buttons + the track's
+   own min-width would overflow the dock's own box rather than adapting,
+   so this tier shrinks the fixed-width chrome to keep the track (the
+   thing that actually needs the room) as large as possible. */
+@media (max-width: 560px) {
+  .transport-dock { width: calc(100vw - 16px); padding: 8px; gap: 6px; }
+  .dock-row { gap: 6px; }
+  .dock-row .icon-btn { width: 34px; }
+  .dock-time { min-width: 58px; font-size: 10px; }
+  .scrub-track, .kf-track { min-width: 80px; }
+}
+
 /* ─── SCRUB / KEYFRAME TRACKS ───────────────────────────────────────────── */
 .scrub-track, .kf-track {
   position: relative;
   flex: 1;
-  height: 44px;
+  min-width: 120px;
+  height: 56px;
   background: var(--panel-bg);
   border: 1px solid var(--border);
   touch-action: none;
@@ -451,7 +469,7 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
 .kf-marker {
   position: absolute;
   top: 50%; left: 0;
-  width: 14px; height: 14px;
+  width: 18px; height: 18px;
   transform: translate(-50%, -50%) rotate(45deg);
   background: var(--text-hi);
   border: 1px solid var(--bg);
@@ -462,7 +480,7 @@ input[type="range"]::-webkit-slider-runnable-track { background: var(--border); 
   content: '';
   position: absolute;
   left: 50%; top: 50%;
-  width: 28px; height: 44px;
+  width: 36px; height: 56px;
   transform: translate(-50%, -50%) rotate(-45deg);
 }
 .kf-marker.selected { background: var(--accent); }
