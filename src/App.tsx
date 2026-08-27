@@ -57,6 +57,12 @@ export default function App() {
   const [videoError, setVideoError] = useState<string | null>(null);
   const [params, setParams] = useState<TrackerParams>(DEFAULT_PARAMS);
   const [showUI, setShowUI] = useState(true);
+  const [dockVisible, setDockVisible] = useState(true);
+  // Lifted out of TransportDock so a dragged position survives the dock
+  // being hidden/re-shown via either showUI (Ctrl+K) or dockVisible —
+  // both unmount TransportDock rather than just CSS-hiding it, which would
+  // otherwise reset a dock-local position back to default on every re-show.
+  const [dockPos, setDockPos] = useState<{ x: number; y: number } | null>(null);
   const [isPaused, setIsPaused] = useState(true);
 
   // Export state
@@ -445,7 +451,7 @@ export default function App() {
         style={previewSize ? { width: previewSize.w, height: previewSize.h } : undefined}
         onClick={togglePlay}
       />
-      {videoSrc && showUI && (
+      {videoSrc && showUI && dockVisible && (
         <TransportDock
           isPaused={isPaused}
           onTogglePlay={togglePlay}
@@ -460,6 +466,9 @@ export default function App() {
           onRetime={retimeKeyframe}
           onAddKeyframe={addKeyframe}
           disabled={isRecording || isEncoding}
+          pos={dockPos}
+          onPosChange={setDockPos}
+          showUI={showUI}
         />
       )}
 
@@ -562,6 +571,7 @@ export default function App() {
                 </Section>
 
                 <Section label="KEYFRAMES">
+                  <div className="toggle-row"><span>SHOW TRANSPORT DOCK</span><BrutToggle value={dockVisible} onChange={setDockVisible} /></div>
                   <div className="hint-text">
                     {keyframes.length === 0
                       ? 'No keyframes — export uses the static settings above. Use the dock at the bottom of the screen to add one.'
