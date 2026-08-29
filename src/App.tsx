@@ -53,6 +53,10 @@ const DEFAULT_PARAMS: TrackerParams = {
   strobeColor: '#FFFFFF',
   strobeDecayMs: 200,
   strobeScope: 'canvas',
+  strobePulses: 4,
+  strobeTriggerMode: 'spawn',
+  strobeRandomIntervalMs: 400,
+  strobeRandomDensity: 0.7,
 };
 
 // ─── MAIN APP ──────────────────────────────────────────────────────────────────
@@ -588,6 +592,7 @@ export default function App() {
                   {displayParams.strobeEnabled && (
                     <>
                       <BrutSlider label="INTENSITY" value={displayParams.strobeIntensity} min={0} max={2} step={0.05} onChange={v => setDisplayParam('strobeIntensity', v)} />
+                      <BrutSlider label="PULSES" value={displayParams.strobePulses} min={1} max={12} step={1} onChange={v => setDisplayParam('strobePulses', v)} />
                       <ColorRow label="COLOR" value={displayParams.strobeColor} onChange={v => setDisplayParam('strobeColor', v)} />
                       <BrutSlider label="DECAY MS" value={displayParams.strobeDecayMs} min={50} max={1000} step={10} onChange={v => setDisplayParam('strobeDecayMs', v)} />
                       <div className="row gap-8">
@@ -595,7 +600,21 @@ export default function App() {
                           onClick={() => setDisplayParam('strobeScope', 'canvas')}>CANVAS</button>
                         <button className={`mode-btn flex-1${displayParams.strobeScope === 'blob' ? ' active' : ''}`}
                           onClick={() => setDisplayParam('strobeScope', 'blob')}>BLOB</button>
+                        <button className={`mode-btn flex-1${displayParams.strobeScope === 'box' ? ' active' : ''}`}
+                          onClick={() => setDisplayParam('strobeScope', 'box')}>BOX</button>
                       </div>
+                      <div className="row gap-8">
+                        <button className={`mode-btn flex-1${displayParams.strobeTriggerMode === 'spawn' ? ' active' : ''}`}
+                          onClick={() => setDisplayParam('strobeTriggerMode', 'spawn')}>SPAWN</button>
+                        <button className={`mode-btn flex-1${displayParams.strobeTriggerMode === 'random' ? ' active' : ''}`}
+                          onClick={() => setDisplayParam('strobeTriggerMode', 'random')}>RANDOM</button>
+                      </div>
+                      {displayParams.strobeTriggerMode === 'random' && (
+                        <>
+                          <BrutSlider label="RANDOM INTERVAL MS" value={displayParams.strobeRandomIntervalMs} min={100} max={2000} step={50} onChange={v => setDisplayParam('strobeRandomIntervalMs', v)} />
+                          <BrutSlider label="RANDOM DENSITY" value={displayParams.strobeRandomDensity} min={0} max={1} step={0.05} onChange={v => setDisplayParam('strobeRandomDensity', v)} />
+                        </>
+                      )}
                     </>
                   )}
                 </Section>

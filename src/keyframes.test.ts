@@ -34,6 +34,10 @@ const baseParams: TrackerParams = {
   strobeColor: '#FFFFFF',
   strobeDecayMs: 200,
   strobeScope: 'canvas',
+  strobePulses: 4,
+  strobeTriggerMode: 'spawn',
+  strobeRandomIntervalMs: 400,
+  strobeRandomDensity: 0.7,
 };
 
 function kf(id: string, time: number, overrides: Partial<TrackerParams>): Keyframe {

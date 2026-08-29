@@ -40,7 +40,7 @@ export interface TrackedBlob {
   area: number;
   life: number;
   spawnX: number; spawnY: number;
-  /** `this.video.currentTime` at the moment this blob was created — used only by the 'blob'-scope strobe decay (see `applyStrobe()`). Video time, not wall-clock, so decay is correct/deterministic in both live preview and export. */
+  /** `this.video.currentTime` at the moment this blob was created — used by the 'blob'/'box'-scope strobe pulse train, in spawn trigger mode, to time each burst (see `applyStrobe()`). Video time, not wall-clock, so timing is correct/deterministic in both live preview and export. */
   spawnTime: number;
   trail: { x: number; y: number }[];
   /** Position within a subdivided parent blob (0-indexed), or undefined for a primary (non-subdivided) blob. Used to identify the "anchor" sub-blob for gating one-label-per-parent logic, independent of numeric id (which grows unbounded and can't reliably distinguish primary blobs from sub-blobs once it exceeds 1000). */
@@ -86,8 +86,23 @@ export interface TrackerParams {
   strobeEnabled: boolean;
   strobeIntensity: number;  // peak alpha multiplier at the instant of trigger (0–2)
   strobeColor: string;      // hex; white = flash brighter, black = flash darker
-  strobeDecayMs: number;    // ms for the flash to fade from full intensity to 0
-  strobeScope: 'canvas' | 'blob'; // 'canvas' = whole frame, 'blob' = only the spawning blob's box
+  strobeDecayMs: number;    // ms burst duration — the pulse train fires `strobePulses` hard on/off flashes spread evenly across this window (see `applyStrobe()`/`strobeAlpha()`)
+  strobeScope: 'canvas' | 'blob' | 'box'; // 'canvas' = whole frame, 'blob' = raw full-extent box of the spawning blob(s), 'box' = the actual tracking box outline (incl. SUBDIVIDE sub-boxes), stroked not filled
+  strobePulses: number;      // number of hard on/off flashes spread evenly across strobeDecayMs (1–12); 1 = single hard flash
+  strobeTriggerMode: 'spawn' | 'random'; // 'spawn' = fires on blob spawn (original behavior), 'random' = deterministic signal-generator-style trigger independent of blob spawns
+  strobeRandomIntervalMs: number; // 'random' mode only: average bucket spacing in ms (100–2000)
+  strobeRandomDensity: number;    // 'random' mode only: probability [0,1] a given time bucket actually fires
+}
+
+/**
+ * Deterministic pseudo-random hash mapping any real number to [0, 1).
+ * Pure function of its input, no state — used by 'random' strobe trigger
+ * mode so trigger timing is a function of `video.currentTime` alone and
+ * reproduces identically on seek/scrub/export (see `applyStrobe()`).
+ */
+function hash01(n: number): number {
+  const x = Math.sin(n * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
 }
 
 let nextId = 1;
@@ -728,15 +743,106 @@ export class BlobTracker {
   }
 
   /**
-   * Motion-triggered strobe overlay: a plain alpha-blended fill of
-   * `strobeColor`, decaying linearly from `strobeIntensity` to 0 over
-   * `strobeDecayMs`, drawn after everything else in the frame (called only
-   * from `processFrame()`/`renderOnce()`, after `renderBlobs()`). Uses
-   * `source-over` alpha blending rather than a blend-mode trick (e.g.
-   * `screen`/`multiply`) so black and white flashes behave symmetrically.
+   * Hard on/off pulse-train alpha for a strobe burst, Ikeda-style: constant-
+   * intensity flashes with no fade, not a decay curve. `elapsedMs` is time
+   * since the burst's trigger instant; the burst lasts `strobeDecayMs` and
+   * is divided into `strobePulses` equal periods, each "on" for the first
+   * 35% of its period (hardcoded duty cycle — see plan's "no duty-cycle
+   * slider" scope call) and fully off for the rest. Returns `strobeIntensity`
+   * clamped to [0, 1] when on, `0` when off or once `elapsedMs` has left the
+   * burst window — pure function of its input, reusable across trigger modes
+   * and scopes. Clamped here (not left to the caller) because the INTENSITY
+   * slider's range is 0–2: assigning `ctx.globalAlpha` outside [0,1] is
+   * silently ignored per the Canvas 2D spec (it just keeps whatever alpha
+   * was previously set), so this function's own contract must hold
+   * regardless of what any caller happens to leave `globalAlpha` at.
+   */
+  private strobeAlpha(elapsedMs: number): number {
+    const p = this.params;
+    if (elapsedMs < 0 || elapsedMs >= p.strobeDecayMs) return 0;
+    const pulses = Math.max(1, p.strobePulses);
+    const period = p.strobeDecayMs / pulses;
+    const phase = (elapsedMs % period) / period;
+    return phase < 0.35 ? Math.max(0, Math.min(1, p.strobeIntensity)) : 0;
+  }
+
+  /**
+   * 'random' trigger mode: derives the elapsed time into an active pulse
+   * train purely from `now` (video time) and the deterministic `hash01`
+   * hash — no stored "next scheduled trigger" state, so it reproduces
+   * identically on seek/scrub/export (see plan's determinism rationale).
    *
-   * Keyed off `this.video.currentTime`, not wall-clock time, so the decay
-   * is correct and deterministic in both live preview and non-realtime
+   * Time is divided into `strobeRandomIntervalMs`-wide buckets; `hash01`
+   * of the bucket index decides fire/no-fire against `strobeRandomDensity`,
+   * and a second hash gives a jitter fraction placing the exact trigger
+   * instant inside the bucket. Checks the current bucket and the previous
+   * one (a burst can still be mid-pulse-train after its bucket ends) and
+   * returns the elapsed time since whichever fired most recently, or
+   * `null` if neither bucket has an active burst right now.
+   */
+  private randomTriggerElapsedMs(now: number): number | null {
+    const p = this.params;
+    const interval = p.strobeRandomIntervalMs;
+    if (interval <= 0) return null;
+    const nowMs = now * 1000;
+    const bucket = Math.floor(nowMs / interval);
+    let best: number | null = null;
+    for (const b of [bucket, bucket - 1]) {
+      if (hash01(b) >= p.strobeRandomDensity) continue;
+      const jitter = hash01(b + 0.5);
+      const triggerMs = b * interval + jitter * interval;
+      const elapsed = nowMs - triggerMs;
+      if (elapsed >= 0 && elapsed < p.strobeDecayMs && (best === null || elapsed < best)) {
+        best = elapsed;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * 'box' scope: strokes (not fills) the tracking box outline itself so the
+   * strobe reads as the tracking square blinking, not a wash covering it.
+   * Uses `difference` composite so the flash reads against both light and
+   * dark backgrounds regardless of the active render mode's own box color —
+   * except pure black `strobeColor`, where `difference` against anything is
+   * a mathematical no-op (|0 - dst| = dst, i.e. always identical to not
+   * drawing at all); that case falls back to plain `source-over` so a
+   * black strobe is still visible (see plan's "Known limitations" #2).
+   */
+  private strokeStrobeBoxes(blobs: TrackedBlob[], alpha: number) {
+    const p = this.params;
+    // Assumes `strobeColor` arrives as a lowercase `#rrggbb` hex string (the
+    // shape the native <input type="color"> in App.tsx always produces).
+    // The `.replace`/`.toLowerCase` below only guards whitespace/case, not
+    // shorthand or named colors — a future preset-import path that can set
+    // `strobeColor` to `"#000"` or `"black"` would bypass this check and
+    // quietly reintroduce the invisible-flash bug this branch exists to fix.
+    const isPureBlack = p.strobeColor.replace(/\s/g, '').toLowerCase() === '#000000';
+    this.ctx.globalCompositeOperation = isPureBlack ? 'source-over' : 'difference';
+    this.ctx.globalAlpha = alpha;
+    this.ctx.strokeStyle = p.strobeColor;
+    this.ctx.lineWidth = Math.max(p.strokeWidth, 4) * this.getS();
+    for (const b of blobs) this.ctx.strokeRect(b.x, b.y, b.w, b.h);
+  }
+
+  /**
+   * Motion-triggered strobe overlay: a hard on/off pulse train (see
+   * `strobeAlpha()`) of `strobeColor`, drawn after everything else in the
+   * frame (called only from `processFrame()`/`renderOnce()`, after
+   * `renderBlobs()`). `'canvas'`/`'blob'` scopes use plain `source-over`
+   * alpha-blended fills so black and white flashes behave symmetrically;
+   * `'box'` scope strokes the tracking box itself (see `strokeStrobeBoxes()`).
+   *
+   * `strobeTriggerMode === 'spawn'` sources trigger timing from blob spawns
+   * exactly as before (`lastCanvasStrobeTime` for `'canvas'`, each blob's own
+   * `spawnTime` for `'blob'`/`'box'`). `'random'` mode instead derives an
+   * independent, deterministic trigger schedule from `video.currentTime`
+   * alone (see `randomTriggerElapsedMs()`) and — since there's no single
+   * "spawning" blob to key off — applies to every currently tracked blob
+   * simultaneously for `'blob'`/`'box'` scope.
+   *
+   * Keyed off `this.video.currentTime`, not wall-clock time, so it is
+   * correct and deterministic in both live preview and non-realtime
    * export, consistent with every other time-based calculation in this
    * class (keyframe resolution, trail aging, the RECON_SCAN pulse).
    */
@@ -745,26 +851,60 @@ export class BlobTracker {
     if (!p.strobeEnabled || p.strobeDecayMs <= 0) return;
 
     const now = this.video.currentTime;
-    this.ctx.globalCompositeOperation = 'source-over';
-    this.ctx.fillStyle = p.strobeColor;
 
-    if (p.strobeScope === 'canvas') {
-      if (this.lastCanvasStrobeTime === null) return;
-      const decay = 1 - ((now - this.lastCanvasStrobeTime) * 1000) / p.strobeDecayMs;
-      if (decay > 0) {
-        this.ctx.globalAlpha = Math.max(0, Math.min(1, p.strobeIntensity * decay));
+    if (p.strobeTriggerMode === 'random') {
+      const elapsedMs = this.randomTriggerElapsedMs(now);
+      if (elapsedMs === null) return;
+      const alpha = this.strobeAlpha(elapsedMs);
+      // "off" tick: draw nothing at all, including for 'box' scope.
+      if (alpha <= 0) return;
+      if (p.strobeScope === 'canvas') {
+        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.globalAlpha = alpha;
+        this.ctx.fillStyle = p.strobeColor;
         this.ctx.fillRect(0, 0, this.width, this.height);
+      } else if (p.strobeScope === 'blob') {
+        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.globalAlpha = alpha;
+        this.ctx.fillStyle = p.strobeColor;
+        for (const b of this.blobs) this.ctx.fillRect(b.x, b.y, b.w, b.h);
+      } else {
+        this.strokeStrobeBoxes(this.getDisplayBlobs(), alpha);
       }
     } else {
-      for (const b of this.blobs) {
-        const decay = 1 - ((now - b.spawnTime) * 1000) / p.strobeDecayMs;
-        if (decay <= 0) continue;
-        this.ctx.globalAlpha = Math.max(0, Math.min(1, p.strobeIntensity * decay));
-        this.ctx.fillRect(b.x, b.y, b.w, b.h);
+      // 'spawn' (default): same trigger sourcing as before the Ikeda rework.
+      if (p.strobeScope === 'canvas') {
+        if (this.lastCanvasStrobeTime === null) return;
+        const alpha = this.strobeAlpha((now - this.lastCanvasStrobeTime) * 1000);
+        if (alpha > 0) {
+          this.ctx.globalCompositeOperation = 'source-over';
+          this.ctx.globalAlpha = alpha;
+          this.ctx.fillStyle = p.strobeColor;
+          this.ctx.fillRect(0, 0, this.width, this.height);
+        }
+      } else if (p.strobeScope === 'blob') {
+        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.fillStyle = p.strobeColor;
+        for (const b of this.blobs) {
+          const alpha = this.strobeAlpha((now - b.spawnTime) * 1000);
+          if (alpha <= 0) continue;
+          this.ctx.globalAlpha = alpha;
+          this.ctx.fillRect(b.x, b.y, b.w, b.h);
+        }
+      } else {
+        const displayBlobs = this.getDisplayBlobs();
+        let onAlpha = 0;
+        const onBlobs = displayBlobs.filter(b => {
+          const a = this.strobeAlpha((now - b.spawnTime) * 1000);
+          if (a > 0) onAlpha = a;
+          return a > 0;
+        });
+        if (onBlobs.length) this.strokeStrobeBoxes(onBlobs, onAlpha);
       }
     }
 
     this.ctx.globalAlpha = 1;
+    this.ctx.globalCompositeOperation = 'source-over';
   }
 
   // ─── MODE: BOX_INVERT ─────────────────────────────────────────────────────
